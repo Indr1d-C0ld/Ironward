@@ -9,6 +9,7 @@
 ![WebSocket](https://img.shields.io/badge/rete-WebSocket%20autoritativo-8a5cf5)
 ![SQLite](https://img.shields.io/badge/database-node%3Asqlite-0f80cc)
 ![Asset](https://img.shields.io/badge/asset-100%25%20procedurali-e0a830)
+![Licenza](https://img.shields.io/badge/licenza-GPL--3.0-bd0000)
 
 Ironward riprende le meccaniche degli FPS a griglia dei primi anni '90 (raycasting, porte
 scorrevoli, pareti segrete, sprite orientati) e le porta in rete: cooperativa contro l'IA,
@@ -40,6 +41,7 @@ usato dal gioco, e nessun asset di altri giochi.
 - [Configurazione](#configurazione)
 - [Deploy su Debian](#deploy-su-debian)
 - [Prossimi passi](#prossimi-passi)
+- [Licenza](#licenza)
 
 ## In breve
 
@@ -381,6 +383,14 @@ Accesso e registrazione: 12 tentativi ogni 10 minuti per IP; azioni sui clan: 30
 
 ---
 
-Codice, grafica e suoni sono originali; le meccaniche sono ispirate ai classici del genere,
-senza riutilizzarne contenuti. Il repository non ha ancora una licenza: il codice è consultabile,
-ma per riutilizzarlo serve il permesso dell'autore.
+## Licenza
+
+Copyright © 2026 Indr1d-C0ld.
+
+Ironward è software libero: puoi ridistribuirlo e modificarlo secondo i termini della
+[GNU General Public License](LICENSE) pubblicata dalla Free Software Foundation, versione 3
+o (a tua scelta) qualsiasi versione successiva. È distribuito nella speranza che sia utile, ma
+**senza alcuna garanzia**; vedi il file [LICENSE](LICENSE) per i dettagli.
+
+La licenza copre tutto il repository: codice, grafica e suoni, che sono generati dal codice stesso.
+Le meccaniche sono ispirate ai classici del genere, senza riutilizzarne contenuti.

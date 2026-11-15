@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "FPS raycasting multiplayer nel browser in stile VGA, con mappe procedurali",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "build": "esbuild client=client/main.ts gallery=client/gallery.ts admin=client/admin.ts --bundle --format=esm --target=es2022 --sourcemap --outdir=client/dist",
     "start": "node server/main.ts",
