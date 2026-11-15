@@ -1,6 +1,6 @@
 {
   "name": "ironward",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "description": "FPS raycasting multiplayer nel browser in stile VGA, con mappe procedurali",

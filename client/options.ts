@@ -181,7 +181,7 @@ function render(): void {
   body.replaceChildren();
   if (tab === 'controls') {
     body.append(
-      row('Sensibilità del mouse', slider('mouseSens', 0.05, 2, 0.05, (v) => v.toFixed(2)), '1,00 = quella originale; prima di queste opzioni era 1,00'),
+      row('Sensibilità del mouse', slider('mouseSens', 0.05, 2, 0.05, (v) => v.toFixed(2)), '1,00 = la sensibilità originale del gioco, più alta'),
       row('Inverti il mouse', toggle('invertMouse'), 'muovere il mouse a destra ruota a sinistra'),
       row('Rotazione con i tasti', slider('turnSpeed', 60, 360, 10, (v) => `${v}°/s`)),
     );

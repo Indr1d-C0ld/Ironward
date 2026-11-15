@@ -44,6 +44,8 @@ livelli sono **generati dal codice**. Nessun asset di altri giochi.
 - [Prossimi passi](#prossimi-passi)
 - [Licenza](#licenza)
 
+Storia delle versioni: [CHANGELOG.md](CHANGELOG.md).
+
 ## In breve
 
 | | |
@@ -105,6 +107,10 @@ anche pulsanti del mouse e rotella).
 
 Si aprono dal menu iniziale e, in partita, dal menu di pausa (Esc). Ogni modifica si applica
 subito e resta salvata nel browser.
+
+| Menu di pausa | Opzioni → Comandi |
+|---|---|
+| ![Menu di pausa durante una partita](docs/images/pausa.jpg) | ![Pannello delle opzioni, scheda Comandi](docs/images/opzioni.jpg) |
 
 | Scheda | Cosa si regola |
 |---|---|
