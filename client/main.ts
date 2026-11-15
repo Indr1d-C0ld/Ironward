@@ -6,7 +6,7 @@ import {
 import { generateLevel, type Level } from '../shared/level.ts';
 import { applyPlayerInput } from '../shared/physics.ts';
 import {
-  BTN_FIRE, BTN_USE, ENEMY_ID_BASE, ENEMY_WEAPON_BASE,
+  BTN_FIRE, BTN_THROW, BTN_USE, ENEMY_ID_BASE, ENEMY_WEAPON_BASE,
   type InputCmd, type NetEnemy, type NetEvent, type NetMe, type NetPlayer, type ServerMsg, type SnapMsg,
 } from '../shared/protocol.ts';
 import { buildTextures, drawWeapon, enemySpriteKey, playerSpriteKey, setWeaponImages, SpriteBank, viewIndex, type Pose } from './art.ts';
@@ -29,19 +29,20 @@ const screen = $<HTMLCanvasElement>('screen');
 const sctx = screen.getContext('2d')!;
 const menu = $<HTMLDivElement>('menu');
 const chatInput = $<HTMLInputElement>('chat');
-const textures = buildTextures();
+const textures: (Uint8Array | Uint32Array)[] = buildTextures();
 const spriteTex = new SpriteBank();
 // Sprite e armi disegnati con PixelLab, caricati in parallelo senza bloccare il menu;
 // finché non arrivano (o se mancano) si usa la grafica procedurale.
 void loadAtlas().then((pixellab) => {
   if (pixellab) {
     spriteTex.setAtlas(pixellab.atlas);
+    for (const [t, tex] of pixellab.walls) textures[t] = tex;
     setWeaponImages(pixellab.weapons, pixellab.atlas.muzzle, pixellab.atlas.muzzleX);
     return;
   }
   // le figure procedurali dei nemici si preparano a pezzi nei momenti liberi
   const todo: string[] = [];
-  for (const kind of ['guard', 'trooper', 'hound']) for (const pose of ['stand', 'walk1', 'walk2', 'aim', 'fire', 'pain', 'dead'] as Pose[]) for (let v = 0; v < 8; v++) todo.push(enemySpriteKey(kind, pose, v));
+  for (const kind of ['guard', 'trooper', 'hound', 'officer']) for (const pose of ['stand', 'walk1', 'walk2', 'aim', 'fire', 'pain', 'dead'] as Pose[]) for (let v = 0; v < 8; v++) todo.push(enemySpriteKey(kind, pose, v));
   const step = () => { const t0 = performance.now(); while (todo.length && performance.now() - t0 < 6) spriteTex.get(todo.pop()!); if (todo.length) setTimeout(step, 16); };
   setTimeout(step, 50);
 });
@@ -72,7 +73,10 @@ let levelNum = 1;
 let doorOpen = new Float32Array(0);
 let snaps: Snap[] = [];
 let clockOffset: number | null = null;
-let me: NetMe = { hp: 100, am: 8, wp: 3, w: 1, rs: 0, xp: 0, lv: 1, mhp: 100 };
+let me: NetMe = { hp: 100, am: 8, wp: 3, w: 1, rs: 0, xp: 0, lv: 1, mhp: 100, ar: 0, gr: 0, key: 0 };
+/** granate in volo e esplosioni in corso */
+let proj: { x: number; y: number }[] = [];
+const booms: { x: number; y: number; t: number }[] = [];
 let registered = false;
 const xpPopups: { text: string; t: number }[] = [];
 let levelBanner: { lvl: number; unlocks: string[]; t: number } | null = null;
@@ -228,6 +232,8 @@ function onSnap(s: SnapMsg): void {
   gone = new Set(s.gone);
   dyn = [];
   for (let i = 0; i < s.di.length; i += 4) dyn.push({ id: s.di[i], k: s.di[i + 1], x: s.di[i + 2] / 100, y: s.di[i + 3] / 100 });
+  proj = [];
+  if (s.pj) for (let i = 0; i < s.pj.length; i += 2) proj.push({ x: s.pj[i] / 100, y: s.pj[i + 1] / 100 });
 
   me = s.me;
   if (s.ts) teamScore = s.ts;
@@ -287,6 +293,14 @@ function onEvent(ev: NetEvent, now: number): void {
       }
       break;
     case 'die': sfx.play('die', volAt(ev.x, ev.y)); break;
+    case 'throw': sfx.play('throw', volAt(ev.x, ev.y)); break;
+    case 'boom': {
+      booms.push({ x: ev.x, y: ev.y, t: now });
+      sfx.play('boom', volAt(ev.x, ev.y));
+      const d = Math.hypot(ev.x - local.x, ev.y - local.y);
+      if (d < 6) hurt = Math.max(hurt, 0.5 * (1 - d / 6));
+      break;
+    }
     case 'kill': feed.push({ text: `${ev.by} ✖ ${ev.vic}`, t: now }); break;
     case 'pick':
       if (ev.id === myId) {
@@ -334,7 +348,10 @@ function inputStep(): void {
   angle = Math.atan2(Math.sin(angle), Math.cos(angle));
   const fire = mouseDown || keys.has('ControlLeft') || keys.has('ControlRight');
   const use = keys.has('KeyE') || keys.has('Space');
-  const cmd: InputCmd = { q: ++seq, f, s, a: Math.round(angle * 10000) / 10000, b: (fire ? BTN_FIRE : 0) | (use ? BTN_USE : 0), w: wantWeapon };
+  const thr = keys.has('KeyG');
+  const cmd: InputCmd = { q: ++seq, f, s, a: Math.round(angle * 10000) / 10000, b: (fire ? BTN_FIRE : 0) | (use ? BTN_USE : 0) | (thr ? BTN_THROW : 0), w: wantWeapon };
+  // compensazione della latenza: il tick del server che si sta guardando (gli altri sono interpolati)
+  if (fire && clockOffset !== null) cmd.v = Math.round(((performance.now() - clockOffset - INTERP_MS) / (TICK_DT * 1000)) * 100) / 100;
   wantWeapon = -1;
   if (cmd.w >= 0 && (me.wp >> cmd.w) & 1) localWeapon = cmd.w;
 
@@ -418,6 +435,13 @@ function frame(now: number): void {
   const sprites: SpriteInst[] = [];
   for (const it of level.items) if (!gone.has(it.id)) sprites.push({ x: it.x, y: it.y, key: `item:${it.kind}` });
   for (const it of dyn) sprites.push({ x: it.x, y: it.y, key: `item:${ITEM_KINDS[it.k]}` });
+  for (const g of proj) sprites.push({ x: g.x, y: g.y, key: 'proj:grenade' });
+  // esplosioni: 4 fotogrammi in mezzo secondo
+  for (let i = booms.length - 1; i >= 0; i--) {
+    const f = Math.floor((now - booms[i].t) / 120);
+    if (f > 3) { booms.splice(i, 1); continue; }
+    sprites.push({ x: booms[i].x, y: booms[i].y, key: `fx:boom${f}` });
+  }
 
   const others: { x: number; y: number; c: number }[] = [];
   const teams = isTeamMode(mode);

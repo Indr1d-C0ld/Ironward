@@ -3,7 +3,7 @@
 export type SfxName =
   | 'knife' | 'pistol' | 'smg' | 'chaingun' | 'enemyShot' | 'bite' | 'alert' | 'pain' | 'die'
   | 'pick' | 'weapon' | 'door' | 'secret' | 'hurt' | 'exit' | 'empty' | 'hit'
-  | 'flagTake' | 'flagLost' | 'flagReturn';
+  | 'flagTake' | 'flagLost' | 'flagReturn' | 'boom' | 'throw';
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -84,6 +84,12 @@ export class Sfx {
       case 'flagTake': [440, 554, 659].forEach((f, i) => this.tone(t + i * 0.08, 0.12, 'square', f, f, 0.14 * vol)); break;
       case 'flagLost': [659, 523, 392].forEach((f, i) => this.tone(t + i * 0.1, 0.16, 'square', f, f, 0.14 * vol)); break;
       case 'flagReturn': this.tone(t, 0.25, 'triangle', 392, 784, 0.22 * vol); break;
+      case 'boom':
+        this.noise(t, 1.1, 'lowpass', 900, 1.0 * vol, 1, 60);
+        this.tone(t, 0.6, 'sine', 90, 30, 0.9 * vol);
+        this.noise(t + 0.05, 0.5, 'bandpass', 400, 0.4 * vol, 0.6, 120);
+        break;
+      case 'throw': this.noise(t, 0.18, 'bandpass', 1200, 0.25 * vol, 1.5, 500); this.tone(t, 0.08, 'triangle', 500, 300, 0.1 * vol); break;
       case 'empty': this.tone(t, 0.03, 'square', 900, 700, 0.1 * vol); break;
     }
   }

@@ -132,6 +132,86 @@ function run(room: Room, seconds: number, each?: () => void): void {
   ok(room.teamScore[0] === 0 && room.teamScore[1] === 0 && room.levelNum === 2, 'tdm: nuova partita');
 }
 
+// --- Compensazione della latenza: il colpo vale dove il tiratore vedeva il bersaglio.
+{
+  const room = new Room('t-lag', 'dm', 4242);
+  const a = room.addPlayer(1, fakeWs(), guest('A', 0));
+  const b = room.addPlayer(2, fakeWs(), guest('B', 1));
+  const rm = room.level.rooms.find((r) => r.w >= 7 && r.h >= 5)!;
+  const y0 = rm.y + 0.5;
+  a.x = rm.x + 0.5; a.y = y0; a.a = 0; a.ammo = 99; a.weapon = 1; a.weapons[1] = true;
+  b.x = rm.x + 5.5; b.y = y0;
+  run(room, 0.3);
+  const seen = room.tick; // A vede B sulla linea di tiro
+  // B si sposta di lato di una cella (fuori dalla linea di tiro) in due tick
+  b.y = y0 + 0.5; run(room, TICK_DT);
+  b.y = y0 + 1; run(room, TICK_DT);
+  const hp0 = b.hp;
+  room.enqueue(a, cmds(a, 1, { b: 1, a: 0 }));
+  run(room, TICK_DT);
+  ok(b.hp === hp0, 'latenza: senza indicazione del tick il colpo manca chi si è spostato');
+  a.cooldown = 0;
+  room.enqueue(a, cmds(a, 1, { b: 1, a: 0, v: seen }));
+  run(room, TICK_DT);
+  ok(b.hp < hp0, `latenza: con il tick visto dal tiratore il colpo va a segno (${hp0} → ${b.hp})`);
+  run(room, 1); // ora B è fuori linea da più di 400 ms
+  const hp1 = b.hp;
+  a.cooldown = 0;
+  room.enqueue(a, cmds(a, 1, { b: 1, a: 0, v: room.tick - 100 }));
+  run(room, TICK_DT);
+  ok(b.hp === hp1, 'latenza: oltre 400 ms non si riavvolge');
+}
+
+// --- Giubbotto, granate, tessera e porte blindate.
+{
+  // giubbotto: l'armatura assorbe metà dei danni
+  const room = new Room('t-gear', 'dm', 4242);
+  const a = room.addPlayer(1, fakeWs(), guest('A', 0));
+  const b = room.addPlayer(2, fakeWs(), guest('B', 1));
+  b.armor = 50; b.hp = 100;
+  room['damagePlayer'](b, 40, a, null);
+  ok(b.hp === 80 && b.armor === 30, `giubbotto: 40 danni → salute ${b.hp}, armatura ${b.armor}`);
+  ok(room['tryPickup'](b, 'vest') && b.armor === 80 && room['tryPickup'](b, 'grenade') && b.grenades >= 2, 'giubbotto e granate raccolti');
+
+  // granata: esplode dopo la miccia, ferisce gli avversari vicini
+  const rm = room.level.rooms.find((r) => r.w >= 7 && r.h >= 5)!;
+  a.x = rm.x + 0.5; a.y = rm.y + 2.5; a.a = 0; a.grenades = 1; a.armor = 0;
+  b.x = rm.x + 4.5; b.y = rm.y + 2.5; b.hp = 100; b.armor = 0; b.alive = true;
+  room.enqueue(a, cmds(a, 1, { b: 4, a: 0 }));
+  run(room, 0.2);
+  ok(a.grenades === 0 && room.grenades.length === 1, 'granata lanciata');
+  run(room, 2);
+  ok(room.grenades.length === 0 && b.hp < 100, `granata esplosa: ferito chi era vicino (salute ${b.hp})`);
+
+  // cooperativa: niente danni ai compagni; tessera e porte blindate
+  let seed = 1;
+  let co = new Room('t-key', 'coop', seed);
+  while (!co.level.doors.some((d) => d.locked)) co = new Room('t-key', 'coop', ++seed);
+  const p1 = co.addPlayer(1, fakeWs(), guest('P1', 0));
+  const p2 = co.addPlayer(2, fakeWs(), guest('P2', 1));
+  p2.x = p1.x + 1; p2.y = p1.y; p1.grenades = 1;
+  co['explode']({ x: p1.x + 0.5, y: p1.y, vx: 0, vy: 0, fuse: 0, owner: p1.id });
+  ok(p2.hp === 100 && p1.hp < 100, `granata in cooperativa: compagno illeso, lanciatore ferito (${p1.hp})`);
+  const di = co.level.doors.findIndex((d) => d.locked);
+  const door = co.level.doors[di];
+  // davanti alla porta, guardandola
+  const cand: [number, number][] = door.ew ? [[door.x - 1, door.y], [door.x + 1, door.y]] : [[door.x, door.y - 1], [door.x, door.y + 1]];
+  const [fx, fy] = cand.find(([x, y]) => co.level.walls[y * co.level.w + x] === 0)!;
+  p1.x = fx + 0.5; p1.y = fy + 0.5; p1.a = Math.atan2(door.y - fy, door.x - fx); p1.hp = 100;
+  room['events'].length = 0;
+  co.enqueue(p1, cmds(p1, 1, { b: 2, a: p1.a }));
+  run(co, 0.1);
+  ok(co.doorOpen[di] === 0, 'porta blindata: senza tessera resta chiusa');
+  const ki = co.level.items.findIndex((it) => it.kind === 'key');
+  p2.x = co.level.items[ki].x; p2.y = co.level.items[ki].y;
+  run(co, 0.1);
+  ok(co.hasKey, 'tessera raccolta');
+  co.enqueue(p1, cmds(p1, 1, { b: 0, a: p1.a }));
+  co.enqueue(p1, cmds(p1, 1, { b: 2, a: p1.a }));
+  run(co, 1);
+  ok(co.doorOpen[di] > 0, 'porta blindata: con la tessera si apre');
+}
+
 // --- Clan: squadre composte per clan a inizio partita e sfida tra clan registrata.
 {
   const wars: string[] = [];

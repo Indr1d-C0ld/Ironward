@@ -16,10 +16,19 @@ export interface InputCmd {
   b: number;
   /** cambio arma richiesto, -1 se nessuno */
   w: number;
+  /**
+   * Solo quando si spara: il tick del server (anche frazionario) che il client stava
+   * mostrando, per la compensazione della latenza.
+   */
+  v?: number;
 }
+
+/** Al massimo di quanto il server riavvolge le posizioni per verificare un colpo. */
+export const MAX_REWIND_MS = 400;
 
 export const BTN_FIRE = 1;
 export const BTN_USE = 2;
+export const BTN_THROW = 4;
 
 export type ClientMsg =
   | { t: 'join'; name: string; color: number; room: string; mode: GameMode; seed: string; token?: string }
@@ -66,6 +75,12 @@ export interface NetMe {
   lv: number;
   /** salute massima */
   mhp: number;
+  /** armatura */
+  ar: number;
+  /** granate */
+  gr: number;
+  /** la squadra ha la tessera dell'uscita (cooperativa): 1 sì, 0 no */
+  key: number;
 }
 
 export interface NetEnemy {
@@ -80,6 +95,8 @@ export interface NetEnemy {
 
 export type NetEvent =
   | { e: 'shot'; id: number; w: number; x: number; y: number }
+  | { e: 'throw'; id: number; x: number; y: number }
+  | { e: 'boom'; x: number; y: number }
   | { e: 'hurt'; id: number; by: number }
   | { e: 'die'; id: number; x: number; y: number }
   | { e: 'kill'; by: string; vic: string }
@@ -105,6 +122,8 @@ export interface SnapMsg {
   gone: number[];
   /** oggetti dinamici, quadruple piatte [id, kind, x*100, y*100] */
   di: number[];
+  /** granate in volo, coppie piatte [x*100, y*100] */
+  pj?: number[];
   ev: NetEvent[];
   /** modalità a squadre: punteggi [Ferro, Cobalto] */
   ts?: number[];

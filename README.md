@@ -89,6 +89,7 @@ nella stessa stanza gioca con te; il link `?room=nome&mode=ctf` porta direttamen
 | mouse, click / Ctrl | mira e fuoco |
 | E / spazio | apri porte, pareti segrete, interruttore d'uscita |
 | 1–4, rotella | coltello, pistola, mitraglietta, mitragliatrice |
+| G | lancia una granata |
 | Tab | classifica della partita |
 | M | minimappa |
 | T / Invio | chat |
@@ -96,9 +97,12 @@ nella stessa stanza gioca con te; il link `?room=nome&mode=ctf` porta direttamen
 
 ## Modalità di gioco
 
-**Cooperativa.** Fino a 8 giocatori contro sentinelle, assaltatori e mastini. Bisogna trovare
-l'interruttore verde dell'uscita; il livello successivo nasce da un seed derivato e armi e
-munizioni si conservano. Si guadagna di più ripulendo il livello e scoprendo i passaggi segreti.
+**Cooperativa.** Fino a 8 giocatori contro sentinelle, assaltatori, mastini e il Comandante.
+Bisogna trovare l'interruttore verde dell'uscita; il livello successivo nasce da un seed derivato e
+armi, munizioni, armatura e granate si conservano. Nella maggior parte dei livelli la stanza
+dell'uscita è chiusa da **porte blindate**: la **tessera** che le apre sta in una stanza a metà
+percorso, sorvegliata dal Comandante, e basta che un giocatore la raccolga per tutta la squadra.
+Si guadagna di più ripulendo il livello e scoprendo i passaggi segreti.
 
 **Deathmatch.** Niente nemici, più anelli nella mappa, oggetti che ricompaiono dopo 20 secondi.
 Vince chi arriva a 15 frag, poi parte una nuova mappa.
@@ -134,6 +138,13 @@ Regole comuni alle squadre:
 | Sentinella | 25 | lenta | fucile, 4–12 | 10 |
 | Assaltatore | 60 | media | raffiche rapide, 3–9 | 25 |
 | Mastino | 18 | molto veloce | morso, 5–12 | 15 |
+| Comandante | 140 | media | revolver pesante, 8–18 | 60 |
+
+| Oggetto | Effetto |
+|---|---|
+| Giubbotto antiproiettile | +50 armatura (massimo 100): l'armatura assorbe metà dei danni |
+| Granate | +2 (massimo 5). Con G si lanciano: rimbalzano sui muri ed esplodono dopo 1,6 s, con raggio 2,8 celle e danno fino a 95. Il lanciatore subisce metà danno; compagni e giocatori in cooperativa sono illesi |
+| Tessera | apre le porte blindate della stanza d'uscita (cooperativa) |
 
 L'IA ha stati di guardia, allarme (si propaga con il rumore degli spari), inseguimento sul
 campo di distanze BFS, mira con tempo di reazione, dolore e morte.
@@ -214,15 +225,16 @@ Stile VGA/SVGA anni '90.
 
 <img src="docs/images/palette.png" alt="La palette di 256 colori" width="160" align="right">
 
-- **Sprite PixelLab**: sentinella, assaltatore, mastino, 5 modelli di giocatore (uno per copricapo),
-  oggetti, stendardi, valigette e armi in prima persona sono pixel art generata con PixelLab, a
+- **Sprite PixelLab**: sentinella, assaltatore, mastino, Comandante, 5 modelli di giocatore (uno per
+  copricapo), oggetti, esplosioni, stendardi, valigette, armi in prima persona e le 16 texture delle
+  pareti (porte e porta blindata comprese) sono pixel art generata con PixelLab; le figure sono a
   **8 direzioni** con animazioni di passo, mira e fuoco, dolore e caduta. I file sorgente sono in
   `assets/pixellab/`; `npm run sprites` li impacchetta in un atlante (`client/sprites/`).
 - **Colori di squadra**: le divise dei giocatori, gli stendardi e le valigette sono disegnati in un
   verde "chiave" che il client sostituisce con il colore del giocatore o della squadra, mantenendo
   le ombre. Cinque modelli bastano così per 8 colori × 5 copricapi.
-- **Palette di 256 colori** in 16 rampe da 16 tonalità per pareti, pavimenti e soffitti, ridotte con
-  un dithering ordinato 4×4.
+- **Palette di 256 colori** in 16 rampe da 16 tonalità per pavimenti, soffitti e la grafica
+  procedurale di ripiego, ridotte con un dithering ordinato 4×4.
 - **Luce a 32 scalini**: la distanza scurisce pareti e sprite a gradini, pavimento e soffitto
   mostrano le bande tipiche dell'epoca e la vampa dell'arma illumina la scena. Gli sprite PixelLab
   restano a colori pieni e ricevono la stessa luce, così non perdono sfumature.
@@ -315,6 +327,10 @@ deploy/           unità systemd e configurazione nginx
   `applyPlayerInput` del server, poi li riapplica sopra ogni snapshot confermato e smorza l'errore residuo.
 - **Interpolazione**: gli altri giocatori e i nemici sono mostrati 110 ms nel passato,
   interpolando posizioni e angoli tra due snapshot.
+- **Compensazione della latenza**: ogni sparo porta con sé il tick del server che il client stava
+  mostrando; il server conserva un secondo di posizioni e controlla il colpo contro giocatori e
+  nemici *dove il tiratore li vedeva* (fino a 400 ms indietro), mentre muri e porte restano quelli
+  attuali. Chi ha un ping alto colpisce ciò che ha sullo schermo.
 - **Sicurezza**: limite di comandi per connessione, nomi e messaggi ripuliti, una sessione per
   account, tentativi di accesso limitati per IP, token salvati solo come hash.
 
@@ -377,12 +393,10 @@ Accesso e registrazione: 12 tentativi ogni 10 minuti per IP; azioni sui clan: 30
 ## Prossimi passi
 
 - Prova sul campo con più giocatori e bilanciamento di armi e IA
-- Compensazione della latenza sui colpi
-- Musica procedurale
+- Musica ed effetti sonori (PixelLab richiede l'abbonamento di livello 2; in alternativa, procedurali)
 - Prestigio oltre il livello 50, obiettivi e sfide settimanali
 - Pagina profilo pubblica e storico delle partite
 - Più temi e stanze "prefab" da mescolare al generatore
-- Texture delle pareti a risoluzione più alta
 
 ---
 

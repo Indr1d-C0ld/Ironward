@@ -30,6 +30,7 @@ const HUMAN: Record<string, Src> = {
 const CHARS: CharSpec[] = [
   { key: 'guard', dir: 'guard', poses: HUMAN, dead: ['death', -1] },
   { key: 'trooper', dir: 'trooper', poses: HUMAN, dead: ['death', -1] },
+  { key: 'officer', dir: 'officer', poses: HUMAN, dead: ['death', -1] },
   ...[0, 1, 2, 3, 4].map((h) => ({ key: `player${h}`, dir: `player${h}`, poses: HUMAN, dead: ['death', -1] as [string, number] })),
   { key: 'hound', dir: 'hound', poses: { stand: 'rotation', walk1: ['walk', 1], walk2: ['walk', 3], aim: ['bite', 1], fire: ['bite', 2], pain: ['pain3', 'pain'] }, dead: ['death', -1] },
 ];
@@ -37,6 +38,7 @@ const CHARS: CharSpec[] = [
 const ITEMS: Record<string, string> = {
   'item:medkit': 'medkit', 'item:food': 'food', 'item:ammo': 'ammo', 'item:clip': 'clip', 'item:smg': 'smg',
   'item:chaingun': 'chaingun', 'item:coins': 'coins', 'item:gem': 'gem', flag: 'briefcase',
+  'item:vest': 'vest', 'item:grenade': 'grenade', 'item:key': 'keycard',
 };
 
 // ------------------------------------------------------------------ utilità sulle immagini
@@ -251,6 +253,25 @@ for (const [key, file] of Object.entries(ITEMS)) {
     cells.push({ key: 'flagc', img: place(img, Math.round(CELL / 2 - (b.x0 + b.x1) / 2), 1 - b.y0) });
   }
 }
+// granata in volo: più piccola, all'altezza dei fianchi
+if (existsSync(join(SRC, 'items', 'grenade.png'))) {
+  const g = readPng(join(SRC, 'items', 'grenade.png'));
+  const half: RGBAImage = { w: g.w >> 1, h: g.h >> 1, px: new Uint8Array((g.w >> 1) * (g.h >> 1) * 4) };
+  for (let y = 0; y < half.h; y++) for (let x = 0; x < half.w; x++) half.px.set(g.px.subarray(((y * 2) * g.w + x * 2) * 4, ((y * 2) * g.w + x * 2) * 4 + 4), (y * half.w + x) * 4);
+  const b = bbox(half)!;
+  cells.push({ key: 'proj:grenade', img: place(half, Math.round(CELL / 2 - (b.x0 + b.x1) / 2), 92 - b.y1) });
+}
+// esplosione: 4 fasi da 64 px ingrandite a 128, centrate poco sopra il pavimento
+for (let f = 0; f < 4; f++) {
+  const file = join(SRC, 'fx', `boom${f}.png`);
+  if (!existsSync(file)) { missing.push(`fx:boom${f}`); continue; }
+  const src = readPng(file);
+  const big: RGBAImage = { w: src.w * 2, h: src.h * 2, px: new Uint8Array(src.w * src.h * 16) };
+  for (let y = 0; y < big.h; y++) for (let x = 0; x < big.w; x++) big.px.set(src.px.subarray(((y >> 1) * src.w + (x >> 1)) * 4, ((y >> 1) * src.w + (x >> 1)) * 4 + 4), (y * big.w + x) * 4);
+  const b = bbox(big)!;
+  cells.push({ key: `fx:boom${f}`, img: place(big, Math.round(CELL / 2 - (b.x0 + b.x1) / 2), Math.round(84 - (b.y0 + b.y1) / 2)) });
+}
+
 if (existsSync(join(SRC, 'base.png'))) {
   const img = fit(readPng(join(SRC, 'base.png')), CELL - 4, CELL - 2);
   const b = bbox(img)!;
@@ -286,7 +307,26 @@ for (let w = 0; w < 4; w++) {
   muzzle.push(top - img.h);
   muzzleX.push(Math.round(tx - img.w / 2));
 }
-writeFileSync(join(OUT, 'atlas.json'), JSON.stringify({ cell: CELL, cols, entries, weapons: weapons.length === 4 ? weapons : [], muzzle, muzzleX }, null, 1));
+// pareti: una striscia di texture 64x64, nell'ordine degli indici TEX_* del livello
+const walls: number[] = [];
+const wallDir = join(SRC, 'walls');
+if (existsSync(wallDir)) {
+  for (const f of readdirSync(wallDir).sort()) {
+    const m = /^tex(\d+)\.png$/.exec(f);
+    if (m) walls.push(Number(m[1]));
+  }
+  walls.sort((a, b) => a - b);
+  const strip: RGBAImage = { w: walls.length * 64, h: 64, px: new Uint8Array(walls.length * 64 * 64 * 4) };
+  walls.forEach((t, i) => {
+    const img = readPng(join(wallDir, `tex${t}.png`));
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const si = ((y % img.h) * img.w + (x % img.w)) * 4, di = (y * strip.w + i * 64 + x) * 4;
+      strip.px[di] = img.px[si]; strip.px[di + 1] = img.px[si + 1]; strip.px[di + 2] = img.px[si + 2]; strip.px[di + 3] = 255;
+    }
+  });
+  writePng(join(OUT, 'walls.png'), strip);
+}
+writeFileSync(join(OUT, 'atlas.json'), JSON.stringify({ cell: CELL, cols, entries, weapons: weapons.length === 4 ? weapons : [], muzzle, muzzleX, walls }, null, 1));
 
-console.log(`atlante: ${cells.length} celle (${sheet.w}x${sheet.h}), armi: ${weapons.length}`);
+console.log(`atlante: ${cells.length} celle (${sheet.w}x${sheet.h}), armi: ${weapons.length}, pareti: ${walls.length}`);
 if (missing.length) console.log(`mancanti (restano procedurali): ${missing.length}\n  ${missing.slice(0, 30).join(', ')}${missing.length > 30 ? ' …' : ''}`);

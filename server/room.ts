@@ -3,19 +3,20 @@
 import type { WebSocket } from 'ws';
 import {
   DOOR_HOLD, DOOR_TIME, ENEMIES, ENEMY_KINDS, ENEMY_RADIUS, ES_AIM, ES_CHASE, ES_DEAD, ES_IDLE, ES_PAIN,
-  CTF_LIMIT, FLAG_RETURN_TIME, FLAG_TOUCH, FRAG_LIMIT, HIT_RADIUS, MATCH_TIME, TDM_LIMIT, TEAMS, isTeamMode, INPUT_DT, ITEM_KINDS, MAX_AMMO, MAX_HP, PLAYER_RADIUS, RESPAWN_TIME, START_AMMO, WEAPONS,
+  CTF_LIMIT, FLAG_RETURN_TIME, FLAG_TOUCH, FRAG_LIMIT, HIT_RADIUS, MATCH_TIME, TDM_LIMIT, TEAMS, isTeamMode, INPUT_DT, ITEM_KINDS, MAX_AMMO, MAX_HP, PLAYER_RADIUS, RESPAWN_TIME, START_AMMO, TICK_DT, WEAPONS,
+  GRENADE_DAMAGE, GRENADE_FUSE, GRENADE_RADIUS, GRENADE_SPEED, MAX_ARMOR, MAX_GRENADES, VEST_ARMOR,
   type EnemyDef, type EnemyKind, type GameMode, type ItemKind,
 } from '../shared/defs.ts';
 import { generateLevel, MAP_H, MAP_W, TEX_EXIT, type Level } from '../shared/level.ts';
 import { applyPlayerInput, castRay, distanceField, lineOfSight, moveWithCollision, newRayHit } from '../shared/physics.ts';
 import {
-  BTN_FIRE, BTN_USE, ENEMY_ID_BASE, ENEMY_WEAPON_BASE,
+  BTN_FIRE, BTN_THROW, BTN_USE, ENEMY_ID_BASE, ENEMY_WEAPON_BASE, MAX_REWIND_MS,
   type InputCmd, type NetEnemy, type NetEvent, type NetMe, type NetPlayer,
 } from '../shared/protocol.ts';
 import { hashSeed } from '../shared/rng.ts';
 import {
   XP_CAPTURE, XP_CARRIER_KILL, XP_CLEAR, XP_COINS, XP_ENEMY, XP_EXIT, XP_FLAG_RETURN, XP_FLAG_TAKE, XP_FRAG, XP_GEM,
-  XP_SECRET, XP_STREAK, XP_TEAM_WIN, XP_WIN,
+  XP_KEY, XP_SECRET, XP_STREAK, XP_TEAM_WIN, XP_WIN,
   emptyDelta, levelFromXp, perksFor, type Perks, type StatDelta,
 } from '../shared/progression.ts';
 
@@ -66,9 +67,18 @@ export interface SPlayer {
   queue: InputCmd[];
   lastSeq: number;
   useHeld: boolean;
+  throwHeld: boolean;
+  /** armatura del giubbotto: assorbe metà dei danni */
+  armor: number;
+  grenades: number;
+  /** ultimo avviso "serve la tessera" (secondi di gioco), per non ripeterlo */
+  lockMsgAt: number;
   /** squadra (0, 1) oppure -1 fuori dalle modalità a squadre */
   team: number;
 }
+
+/** Granata in volo. */
+interface Grenade { x: number; y: number; vx: number; vy: number; fuse: number; owner: number; }
 
 interface SEnemy {
   id: number;
@@ -120,11 +130,19 @@ export class Room {
   itemGone!: Uint8Array;
   itemRespawn!: Float32Array;
   dynItems: DynItem[] = [];
+  grenades: Grenade[] = [];
+  /** cooperativa: la squadra ha trovato la tessera delle porte blindate */
+  hasKey = false;
   nextDynId = 10000;
   enemies: SEnemy[] = [];
   players = new Map<number, SPlayer>();
   events: NetEvent[] = [];
   tick = 0;
+  /**
+   * Posizioni degli ultimi ~1 s per la compensazione della latenza:
+   * per tick, coppie (x, y) di giocatori (per id) e nemici (per indice).
+   */
+  private history = new Map<number, { players: Map<number, [number, number, boolean]>; enemies: Float32Array }>();
   pendingLevel = 0;
   emptyFor = 0;
   readonly teams: boolean;
@@ -159,6 +177,8 @@ export class Room {
     this.itemGone = new Uint8Array(lvl.items.length);
     this.itemRespawn = new Float32Array(lvl.items.length);
     this.dynItems = [];
+    this.grenades = [];
+    this.hasKey = false;
     this.enemies = lvl.enemies.map((e, i) => ({
       id: ENEMY_ID_BASE + i, kind: e.kind, def: ENEMIES[e.kind], x: e.x, y: e.y, a: e.a,
       hp: ENEMIES[e.kind].hp, state: ES_IDLE, timer: 0, cooldown: 0, target: -1, sees: false,
@@ -254,6 +274,7 @@ export class Room {
       xpBase: info.xp, level, delta: emptyDelta(), streak: 0, perks: perksFor(level, this.mode === 'coop'),
       x: 0, y: 0, a: 0, hp: MAX_HP, ammo: START_AMMO, weapons: [true, true, false, false],
       weapon: 1, cooldown: 0, alive: true, respawn: 0, frags: 0, deaths: 0, score: 0, queue: [], lastSeq: 0, useHeld: false,
+      throwHeld: false, armor: 0, grenades: 0, lockMsgAt: -99,
       team: -1,
     };
     if (this.teams) p.team = this.pickTeam(info.tag);
@@ -324,6 +345,7 @@ export class Room {
     p.hp = p.perks.maxHp; p.alive = true; p.respawn = 0; p.cooldown = 0;
     if (fullReset) {
       p.ammo = p.perks.startAmmo; p.weapons = [true, true, false, false]; p.weapon = 1;
+      p.armor = 0; p.grenades = this.pvp ? 1 : 0;
     }
   }
 
@@ -345,10 +367,13 @@ export class Room {
       applyPlayerInput(this.level, this.doorOpen, p, cmd);
       if (cmd.w >= 0 && cmd.w < WEAPONS.length && p.weapons[cmd.w]) p.weapon = cmd.w;
       p.cooldown = Math.max(0, p.cooldown - INPUT_DT);
-      if ((cmd.b & BTN_FIRE) && p.cooldown <= 0) this.playerFire(p);
+      if ((cmd.b & BTN_FIRE) && p.cooldown <= 0) this.playerFire(p, cmd.v);
       const use = (cmd.b & BTN_USE) !== 0;
       if (use && !p.useHeld) this.playerUse(p);
       p.useHeld = use;
+      const thr = (cmd.b & BTN_THROW) !== 0;
+      if (thr && !p.throwHeld) this.throwGrenade(p);
+      p.throwHeld = thr;
     }
   }
 
@@ -357,7 +382,38 @@ export class Room {
     return 0;
   }
 
-  private playerFire(p: SPlayer): void {
+  /** Registra le posizioni del tick appena simulato. */
+  private recordHistory(): void {
+    const players = new Map<number, [number, number, boolean]>();
+    for (const o of this.players.values()) players.set(o.id, [o.x, o.y, o.alive]);
+    const enemies = new Float32Array(this.enemies.length * 2);
+    this.enemies.forEach((e, i) => { enemies[i * 2] = e.x; enemies[i * 2 + 1] = e.y; });
+    this.history.set(this.tick, { players, enemies });
+    this.history.delete(this.tick - Math.ceil(1000 / (TICK_DT * 1000)) - 2);
+  }
+
+  /**
+   * Tick a cui riavvolgere un colpo: quello che il client vedeva, entro MAX_REWIND_MS;
+   * null se non serve (nessuna indicazione o già presente).
+   */
+  private rewindTick(v: number | undefined): number | null {
+    if (v === undefined) return null;
+    const min = this.tick - MAX_REWIND_MS / (TICK_DT * 1000);
+    const t = Math.max(min, Math.min(this.tick, v));
+    return t >= this.tick - 0.01 ? null : t;
+  }
+
+  /** Posizione di un bersaglio al tick (frazionario) t, interpolando lo storico. */
+  private pastPos(t: number | null, cur: { x: number; y: number }, get: (h: { players: Map<number, [number, number, boolean]>; enemies: Float32Array }) => [number, number] | null): [number, number] {
+    if (t === null) return [cur.x, cur.y];
+    const t0 = Math.floor(t), f = t - t0;
+    const a = this.history.get(t0), b = this.history.get(t0 + 1) ?? a;
+    const pa = a && get(a), pb = b && get(b);
+    if (!pa || !pb) return [cur.x, cur.y];
+    return [pa[0] + (pb[0] - pa[0]) * f, pa[1] + (pb[1] - pa[1]) * f];
+  }
+
+  private playerFire(p: SPlayer, view?: number): void {
     let def = WEAPONS[p.weapon];
     if (def.ammo > p.ammo) {
       p.weapon = this.bestWeapon(p);
@@ -375,15 +431,21 @@ export class Room {
     let bestT = wallDist;
     let bestEnemy: SEnemy | null = null;
     let bestPlayer: SPlayer | null = null;
-    for (const e of this.enemies) {
+    // i bersagli si controllano dove il tiratore li vedeva (compensazione della latenza);
+    // muri e porte restano quelli attuali
+    const rt = this.rewindTick(view);
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
       if (e.state === ES_DEAD) continue;
-      const t = this.rayHitsCircle(p.x, p.y, dx, dy, e.x, e.y, bestT);
+      const [ex, ey] = this.pastPos(rt, e, (h) => (i * 2 + 1 < h.enemies.length ? [h.enemies[i * 2], h.enemies[i * 2 + 1]] : null));
+      const t = this.rayHitsCircle(p.x, p.y, dx, dy, ex, ey, bestT);
       if (t >= 0) { bestT = t; bestEnemy = e; bestPlayer = null; }
     }
     if (this.pvp) {
       for (const o of this.players.values()) {
         if (!this.isFoe(p, o) || !o.alive) continue;
-        const t = this.rayHitsCircle(p.x, p.y, dx, dy, o.x, o.y, bestT);
+        const [ox, oy] = this.pastPos(rt, o, (h) => { const q = h.players.get(o.id); return q && q[2] ? [q[0], q[1]] : null; });
+        const t = this.rayHitsCircle(p.x, p.y, dx, dy, ox, oy, bestT);
         if (t >= 0) { bestT = t; bestPlayer = o; bestEnemy = null; }
       }
     }
@@ -407,6 +469,59 @@ export class Room {
     return perp < HIT_RADIUS ? t : -1;
   }
 
+  private throwGrenade(p: SPlayer): void {
+    if (p.grenades <= 0 || !p.alive) return;
+    p.grenades--;
+    const dx = Math.cos(p.a), dy = Math.sin(p.a);
+    this.grenades.push({ x: p.x + dx * 0.4, y: p.y + dy * 0.4, vx: dx * GRENADE_SPEED, vy: dy * GRENADE_SPEED, fuse: GRENADE_FUSE, owner: p.id });
+    this.events.push({ e: 'throw', id: p.id, x: r2(p.x), y: r2(p.y) });
+  }
+
+  /** Granate: rimbalzano sui muri, rallentano e alla fine della miccia esplodono. */
+  private updateGrenades(dt: number): void {
+    const solid = (x: number, y: number) => {
+      const i = Math.floor(y) * this.level.w + Math.floor(x);
+      const d = this.level.doorAt[i];
+      return this.level.walls[i] !== 0 || (d >= 0 && this.doorOpen[d] < 0.9);
+    };
+    for (let i = this.grenades.length - 1; i >= 0; i--) {
+      const g = this.grenades[i];
+      const nx = g.x + g.vx * dt, ny = g.y + g.vy * dt;
+      if (solid(nx, g.y)) g.vx *= -0.45; else g.x = nx;
+      if (solid(g.x, ny)) g.vy *= -0.45; else g.y = ny;
+      const drag = Math.pow(0.35, dt);
+      g.vx *= drag; g.vy *= drag;
+      if ((g.fuse -= dt) <= 0) {
+        this.grenades.splice(i, 1);
+        this.explode(g);
+      }
+    }
+  }
+
+  private explode(g: Grenade): void {
+    this.events.push({ e: 'boom', x: r2(g.x), y: r2(g.y) });
+    const owner = this.players.get(g.owner) ?? null;
+    const dmgAt = (x: number, y: number) => {
+      const d = Math.hypot(x - g.x, y - g.y);
+      if (d > GRENADE_RADIUS || !lineOfSight(this.level, this.doorOpen, g.x, g.y, x, y)) return 0;
+      return Math.round(GRENADE_DAMAGE * (1 - (d / GRENADE_RADIUS) * 0.75));
+    };
+    for (const e of this.enemies) {
+      if (e.state === ES_DEAD) continue;
+      const dmg = dmgAt(e.x, e.y);
+      if (dmg > 0 && owner) this.damageEnemy(e, dmg, owner);
+    }
+    for (const v of this.players.values()) {
+      if (!v.alive) continue;
+      // il lanciatore si ferisce a metà; i compagni di squadra e i giocatori in cooperativa no
+      const self = v.id === g.owner;
+      if (!self && (!this.pvp || (owner && !this.isFoe(owner, v)))) continue;
+      const dmg = dmgAt(v.x, v.y);
+      if (dmg > 0) this.damagePlayer(v, self ? Math.round(dmg / 2) : dmg, owner, null);
+    }
+    if (owner) this.noise(owner);
+  }
+
   private playerUse(p: SPlayer): void {
     const dx = Math.cos(p.a), dy = Math.sin(p.a);
     const W = this.level.w;
@@ -422,6 +537,14 @@ export class Room {
             this.award(p, XP_SECRET, 'passaggio segreto');
           }
           this.openDoor(di);
+          return;
+        }
+        if (door.locked && !this.hasKey) {
+          const now = this.tick * TICK_DT;
+          if (now - p.lockMsgAt > 2) {
+            p.lockMsgAt = now;
+            this.events.push({ e: 'msg', text: `Porta blindata: serve la tessera` });
+          }
           return;
         }
         if (this.doorOpen[di] >= 1 || this.doorDir[di] > 0) this.closeDoor(di);
@@ -512,7 +635,7 @@ export class Room {
       by.delta.kills++;
       this.award(by, XP_ENEMY[e.kind], e.def.name);
       this.events.push({ e: 'die', id: e.id, x: r2(e.x), y: r2(e.y) });
-      if (e.kind !== 'hound') this.dynItems.push({ id: this.nextDynId++, kind: 'clip', x: e.x, y: e.y });
+      if (e.kind !== 'hound') this.dynItems.push({ id: this.nextDynId++, kind: e.kind === 'officer' ? 'grenade' : 'clip', x: e.x, y: e.y });
       return;
     }
     if (e.state === ES_IDLE) this.wake(e, by);
@@ -522,6 +645,11 @@ export class Room {
 
   private damagePlayer(v: SPlayer, dmg: number, by: SPlayer | null, enemy: SEnemy | null): void {
     if (!v.alive) return;
+    if (v.armor > 0) {
+      const absorbed = Math.min(v.armor, Math.round(dmg / 2));
+      v.armor -= absorbed;
+      dmg -= absorbed;
+    }
     v.hp -= dmg;
     this.events.push({ e: 'hurt', id: v.id, by: by ? by.id : enemy ? enemy.id : 0 });
     if (v.hp > 0) return;
@@ -715,7 +843,15 @@ export class Room {
         return true;
       case 'coins': p.score += 100; p.delta.treasure++; this.award(p, XP_COINS, 'monete'); return true;
       case 'gem': p.score += 500; p.delta.treasure++; this.award(p, XP_GEM, 'gemma'); return true;
+      case 'vest': if (p.armor >= MAX_ARMOR) return false; p.armor = Math.min(MAX_ARMOR, p.armor + VEST_ARMOR); return true;
+      case 'grenade': if (p.grenades >= MAX_GRENADES) return false; p.grenades = Math.min(MAX_GRENADES, p.grenades + 2); return true;
+      case 'key':
+        this.hasKey = true;
+        this.award(p, XP_KEY, 'tessera');
+        this.events.push({ e: 'msg', text: `${p.name} ha trovato la tessera: le porte blindate si aprono` });
+        return true;
     }
+    return false;
   }
 
   private updateItems(dt: number): void {
@@ -844,6 +980,7 @@ export class Room {
     this.updateDoors(dt);
     if (this.mode === 'coop') this.updateEnemies(dt);
     this.updateItems(dt);
+    this.updateGrenades(dt);
     if (this.mode === 'ctf') this.updateFlags(dt);
     if (this.teams && this.pendingLevel <= 0 && (this.timeLeft -= dt) <= 0) {
       this.timeLeft = 0;
@@ -858,6 +995,7 @@ export class Room {
 
     if (this.pendingLevel > 0 && (this.pendingLevel -= dt) <= 0) this.nextLevel();
     if ((this.flushTimer -= dt) <= 0) { this.flushTimer = FLUSH_EVERY; this.flushAll(); }
+    this.recordHistory();
     this.broadcast();
     this.events = [];
   }
@@ -899,11 +1037,13 @@ export class Room {
       tl: Math.ceil(this.timeLeft),
       fl: this.flags.length ? this.flags.flatMap((f) => [f.state, Math.round(f.x * 100), Math.round(f.y * 100), f.carrier]) : undefined,
     } : {};
-    const body = JSON.stringify({ tk: this.tick, p, en, d, gone, di, ev: this.events, ...extra });
+    const pj = this.grenades.length ? this.grenades.flatMap((g) => [Math.round(g.x * 100), Math.round(g.y * 100)]) : undefined;
+    const body = JSON.stringify({ tk: this.tick, p, en, d, gone, di, pj, ev: this.events, ...extra });
     for (const s of this.players.values()) {
       if (s.ws.readyState !== 1) continue;
       const me: NetMe = {
         hp: s.hp, am: s.ammo, w: s.weapon, rs: r2(Math.max(0, s.respawn)), xp: this.xpOf(s), lv: s.level, mhp: s.perks.maxHp,
+        ar: s.armor, gr: s.grenades, key: this.hasKey ? 1 : 0,
         wp: s.weapons.reduce((m, has, i) => (has ? m | (1 << i) : m), 0),
       };
       s.ws.send(`{"t":"snap","ack":${s.lastSeq},"me":${JSON.stringify(me)},${body.slice(1)}`);

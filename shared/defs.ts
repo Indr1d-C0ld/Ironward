@@ -54,8 +54,8 @@ export const WEAPONS: readonly WeaponDef[] = [
   { name: 'Mitragliatrice', cooldown: 0.07, dmgMin: 9, dmgMax: 18, range: 48, ammo: 1, spread: 0.045 },
 ];
 
-export type EnemyKind = 'guard' | 'trooper' | 'hound';
-export const ENEMY_KINDS: readonly EnemyKind[] = ['guard', 'trooper', 'hound'];
+export type EnemyKind = 'guard' | 'trooper' | 'hound' | 'officer';
+export const ENEMY_KINDS: readonly EnemyKind[] = ['guard', 'trooper', 'hound', 'officer'];
 
 export interface EnemyDef {
   name: string;
@@ -73,6 +73,7 @@ export interface EnemyDef {
 export const ENEMIES: Readonly<Record<EnemyKind, EnemyDef>> = {
   guard: { name: 'Sentinella', hp: 25, speed: 1.7, range: 14, cooldown: 1.3, dmgMin: 4, dmgMax: 12, score: 100, melee: false, reaction: 0.45 },
   trooper: { name: 'Assaltatore', hp: 60, speed: 2.1, range: 16, cooldown: 0.55, dmgMin: 3, dmgMax: 9, score: 300, melee: false, reaction: 0.3 },
+  officer: { name: 'Comandante', hp: 140, speed: 1.9, range: 16, cooldown: 0.75, dmgMin: 8, dmgMax: 18, score: 800, melee: false, reaction: 0.25 },
   hound: { name: 'Mastino', hp: 18, speed: 3.8, range: 1.1, cooldown: 0.7, dmgMin: 5, dmgMax: 12, score: 200, melee: true, reaction: 0.1 },
 };
 
@@ -83,8 +84,19 @@ export const ES_AIM = 2;
 export const ES_PAIN = 3;
 export const ES_DEAD = 4;
 
-export type ItemKind = 'medkit' | 'food' | 'ammo' | 'clip' | 'smg' | 'chaingun' | 'coins' | 'gem';
-export const ITEM_KINDS: readonly ItemKind[] = ['medkit', 'food', 'ammo', 'clip', 'smg', 'chaingun', 'coins', 'gem'];
+export type ItemKind = 'medkit' | 'food' | 'ammo' | 'clip' | 'smg' | 'chaingun' | 'coins' | 'gem' | 'vest' | 'grenade' | 'key';
+// nuovi tipi solo in coda: l'indice viaggia in rete
+export const ITEM_KINDS: readonly ItemKind[] = ['medkit', 'food', 'ammo', 'clip', 'smg', 'chaingun', 'coins', 'gem', 'vest', 'grenade', 'key'];
+
+/** Giubbotto: punti di armatura; l'armatura assorbe metà dei danni subiti. */
+export const MAX_ARMOR = 100;
+export const VEST_ARMOR = 50;
+/** Granate: quante se ne portano, miccia, raggio e danno al centro dell'esplosione. */
+export const MAX_GRENADES = 5;
+export const GRENADE_FUSE = 1.6;
+export const GRENADE_SPEED = 8;
+export const GRENADE_RADIUS = 2.8;
+export const GRENADE_DAMAGE = 95;
 
 export const PLAYER_COLORS: readonly { name: string; rgb: readonly [number, number, number] }[] = [
   { name: 'Rosso', rgb: [178, 52, 44] },

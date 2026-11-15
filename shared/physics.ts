@@ -1,7 +1,7 @@
 // Collisioni, movimento e raycast DDA condivisi: il server li usa come autorità,
 // il client per la predizione del movimento e per il rendering.
 
-import { type Level, TEX_DOOR, TEX_DOOR_JAMB } from './level.ts';
+import { type Level, TEX_DOOR, TEX_DOOR_JAMB, TEX_LOCKED } from './level.ts';
 import { INPUT_DT, PLAYER_RADIUS, PLAYER_SPEED, clamp } from './defs.ts';
 import type { InputCmd } from './protocol.ts';
 
@@ -94,7 +94,7 @@ export function castRay(level: Level, doorOpen: Float32Array, ox: number, oy: nu
         else if (dy !== 0) { tp = (mapY + 0.5 - oy) / dy; along = ox + tp * dx - mapX; }
         if (tp >= t && tp <= tExit && along >= open && along <= 1) {
           if (tp > maxDist) { out.dist = maxDist; return false; }
-          out.dist = tp; out.tex = TEX_DOOR; out.u = along - open; out.side = door.ew ? 0 : 1;
+          out.dist = tp; out.tex = door.locked ? TEX_LOCKED : TEX_DOOR; out.u = along - open; out.side = door.ew ? 0 : 1;
           out.door = di; out.cx = mapX; out.cy = mapY;
           return true;
         }

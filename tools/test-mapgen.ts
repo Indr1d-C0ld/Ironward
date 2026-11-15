@@ -6,6 +6,7 @@ import { generateLevel, TEX_EXIT, type Level } from '../shared/level.ts';
 import type { GameMode } from '../shared/defs.ts';
 
 const baseWalk: number[] = [];
+let lockedLevels = 0, noOfficer = 0;
 
 function check(lvl: Level): string[] {
   const errs: string[] = [];
@@ -48,6 +49,24 @@ function check(lvl: Level): string[] {
       if (![at(x + 1, y), at(x - 1, y), at(x, y + 1), at(x, y - 1)].some((n) => seen[n])) errs.push('uscita irraggiungibile');
     }
     if (lvl.spawns.length < 4) errs.push(`solo ${lvl.spawns.length} spawn coop`);
+    // porte blindate: senza tessera l'uscita non si raggiunge, la tessera sì
+    const locked = lvl.doors.filter((d) => d.locked);
+    if (locked.length) {
+      lockedLevels++;
+      const blocked = new Set(locked.map((d) => at(d.x, d.y)));
+      const r2 = new Uint8Array(W * lvl.h);
+      const q2 = [at(Math.floor(s0.x), Math.floor(s0.y))];
+      r2[q2[0]] = 1;
+      for (let h = 0; h < q2.length; h++) {
+        const c = q2[h];
+        for (const n of [c + 1, c - 1, c + W, c - W]) if (!r2[n] && lvl.walls[n] === 0 && !blocked.has(n)) { r2[n] = 1; q2.push(n); }
+      }
+      const key = lvl.items.find((it) => it.kind === 'key');
+      if (!key) errs.push('porte blindate senza tessera');
+      else if (!r2[at(Math.floor(key.x), Math.floor(key.y))]) errs.push('tessera dietro le porte blindate');
+      if (lvl.exit && [at(lvl.exit.x + 1, lvl.exit.y), at(lvl.exit.x - 1, lvl.exit.y), at(lvl.exit.x, lvl.exit.y + 1), at(lvl.exit.x, lvl.exit.y - 1)].some((n) => r2[n])) errs.push('uscita raggiungibile senza tessera');
+    } else if (lvl.items.some((it) => it.kind === 'key')) errs.push('tessera senza porte blindate');
+    if (!lvl.enemies.some((e) => e.kind === 'officer')) noOfficer++;
   } else if (lvl.spawns.length < 8) errs.push(`solo ${lvl.spawns.length} spawn ${lvl.mode}`);
   if (lvl.mode === 'tdm' || lvl.mode === 'ctf') {
     if (lvl.bases.length !== 2) errs.push('servono due basi');
@@ -143,5 +162,6 @@ for (const mode of ['coop', 'dm', 'tdm', 'ctf'] as GameMode[]) {
   const walkInfo = bw.length ? `, percorso tra le basi ${bw[0]}–${bw[bw.length - 1]} (mediana ${bw[bw.length >> 1]})` : '';
   console.log(`${mode}: ${N} livelli, medie: stanze ${(rooms / N).toFixed(1)}, porte ${(doors / N).toFixed(1)}, segreti ${(secrets / N).toFixed(1)}, nemici ${(enemies / N).toFixed(1)}${walkInfo}`);
 }
+console.log(`cooperativa: ${lockedLevels}/${N} livelli con porte blindate, ${noOfficer} senza Comandante`);
 console.log(`${failures === 0 ? 'OK' : 'FALLITO'}: ${failures} livelli con errori (${(performance.now() - t0).toFixed(0)} ms)`);
 process.exit(failures ? 1 : 0);

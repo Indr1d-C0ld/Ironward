@@ -18,6 +18,8 @@ export interface AtlasMeta {
   muzzle: number[];
   /** spostamento orizzontale della bocca rispetto al centro dell'immagine */
   muzzleX?: number[];
+  /** indici TEX_* delle pareti presenti in walls.png (strisce 64x64 in quest'ordine) */
+  walls?: number[];
 }
 
 export interface Atlas extends AtlasMeta {
@@ -67,7 +69,21 @@ export function atlasSprite(a: Atlas, index: number, recolor?: RGB): Uint32Array
 }
 
 /** Carica atlante e mappa nel browser; null se mancano (si usa la grafica procedurale). */
-export async function loadAtlas(base = 'sprites/'): Promise<{ atlas: Atlas; weapons: HTMLCanvasElement[] } | null> {
+/** Converte la striscia delle pareti in texture per colonne ABGR, indicizzate per TEX_*. */
+export function wallTextures(meta: AtlasMeta, rgba: Uint8ClampedArray | Uint8Array, width: number): Map<number, Uint32Array> {
+  const out = new Map<number, Uint32Array>();
+  (meta.walls ?? []).forEach((tex, i) => {
+    const t = new Uint32Array(64 * 64);
+    for (let x = 0; x < 64; x++) for (let y = 0; y < 64; y++) {
+      const o = (y * width + i * 64 + x) * 4;
+      t[x * 64 + y] = (0xff000000 | (rgba[o + 2] << 16) | (rgba[o + 1] << 8) | rgba[o]) >>> 0;
+    }
+    out.set(tex, t);
+  });
+  return out;
+}
+
+export async function loadAtlas(base = 'sprites/'): Promise<{ atlas: Atlas; weapons: HTMLCanvasElement[]; walls: Map<number, Uint32Array> } | null> {
   try {
     const meta = await fetch(`${base}atlas.json`).then((r) => (r.ok ? r.json() as Promise<AtlasMeta> : Promise.reject(new Error(String(r.status)))));
     const loadImg = (src: string) => new Promise<HTMLImageElement>((res, rej) => {
@@ -85,7 +101,12 @@ export async function loadAtlas(base = 'sprites/'): Promise<{ atlas: Atlas; weap
     const sheet = toCanvas(await loadImg(`${base}atlas.png`));
     const rgba = sheet.getContext('2d')!.getImageData(0, 0, sheet.width, sheet.height).data;
     const weapons = await Promise.all(meta.weapons.map(async (f) => toCanvas(await loadImg(base + f))));
-    return { atlas: { ...meta, rgba, width: sheet.width }, weapons };
+    let walls = new Map<number, Uint32Array>();
+    if (meta.walls?.length) {
+      const w = toCanvas(await loadImg(`${base}walls.png`));
+      walls = wallTextures(meta, w.getContext('2d')!.getImageData(0, 0, w.width, w.height).data, w.width);
+    }
+    return { atlas: { ...meta, rgba, width: sheet.width }, weapons, walls };
   } catch {
     return null;
   }

@@ -145,6 +145,7 @@ function sanitizeName(s: unknown): string {
 function validCmd(c: unknown): c is InputCmd {
   if (!c || typeof c !== 'object') return false;
   const o = c as Record<string, unknown>;
+  if (o.v !== undefined && (typeof o.v !== 'number' || !Number.isFinite(o.v))) return false;
   return ['q', 'f', 's', 'a', 'b', 'w'].every((k) => typeof o[k] === 'number' && Number.isFinite(o[k]));
 }
 

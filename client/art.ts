@@ -5,7 +5,7 @@
 
 import {
   TEX_BRICK, TEX_BRICK_DARK, TEX_CONCRETE, TEX_CONCRETE_STRIPE, TEX_COUNT, TEX_DOOR, TEX_DOOR_JAMB, TEX_EXIT,
-  TEX_METAL, TEX_METAL_RIVET, TEX_STONE, TEX_STONE_MOSS, TEX_TILE, TEX_TILE_GRIME, TEX_WOOD, TEX_WOOD_PANEL,
+  TEX_LOCKED, TEX_METAL, TEX_METAL_RIVET, TEX_STONE, TEX_STONE_MOSS, TEX_TILE, TEX_TILE_GRIME, TEX_WOOD, TEX_WOOD_PANEL,
 } from '../shared/level.ts';
 import { PLAYER_COLORS, TEAMS } from '../shared/defs.ts';
 import { dithered, indexedToCanvas, Paint, type Mat, type RGB } from './palette.ts';
@@ -223,6 +223,15 @@ export function buildTextures(): Uint8Array[] {
   t[TEX_EXIT] = exitPanel().columns();
   t[TEX_DOOR] = door().columns();
   t[TEX_DOOR_JAMB] = jamb().columns();
+  // porta blindata: la porta normale tinta di rosso con una spia
+  const locked = door();
+  for (let i = 0; i < locked.d.length; i++) {
+    const c = locked.d[i];
+    const r = c & 255, g = (c >>> 8) & 255, b = (c >>> 16) & 255;
+    locked.d[i] = (0xff000000 | ((b * 0.45) << 16) | ((g * 0.45) << 8) | Math.min(255, r * 1.25 + 30)) >>> 0;
+  }
+  locked.ellipse(32, 8, 3, 3, [255, 60, 40]);
+  t[TEX_LOCKED] = locked.columns();
   return t;
 }
 
@@ -823,6 +832,20 @@ function item(kind: string): Paint {
         p.line(x - 3, y - 2, x + 2, y - 2, [255, 250, 190]);
       }
       break;
+    case 'vest':
+      p.poly([40, 90, 88, 90, 92, 126, 36, 126], [52, 72, 120], LEATHER, 'cyl');
+      p.box(56, 88, 16, 8, [30, 40, 70], LEATHER, 0);
+      break;
+    case 'grenade':
+      p.ball(64, 112, 9, 12, [70, 84, 50], METAL);
+      p.box(60, 96, 8, 6, [120, 124, 130], METAL, 1);
+      p.limb(68, 98, 76, 104, 1.4, 1.4, [150, 150, 160], METAL);
+      break;
+    case 'key':
+      p.box(44, 104, 40, 24, [196, 40, 36], SHINY, 1);
+      p.box(50, 108, 12, 8, [236, 196, 60], SHINY, 0);
+      p.line(66, 112, 78, 112, [255, 255, 255]);
+      break;
     case 'gem': {
       const g: RGB = [60, 200, 220];
       p.poly([64, 84, 82, 100, 64, 104], k(g, 1.2), SHINY);
@@ -887,6 +910,7 @@ function briefcase(c: RGB, high: boolean): Paint {
 const ENEMY_OUTFITS: Record<string, Outfit> = {
   guard: { body: [126, 120, 82], dark: [88, 82, 58], head: [86, 92, 66], skin: [214, 170, 130], gun: [48, 48, 52], hat: 'helmet', rifle: true },
   trooper: { body: [64, 74, 98], dark: [40, 46, 62], head: [40, 44, 56], skin: [200, 156, 120], gun: [36, 36, 40], hat: 'visor', glove: [36, 34, 34] },
+  officer: { body: [110, 28, 32], dark: [40, 36, 40], head: [30, 30, 34], skin: [210, 166, 130], gun: [30, 30, 34], hat: 'cap', glove: [30, 28, 28] },
 };
 
 /** Chiave dello sprite di un giocatore; view = 0..7 (0 di fronte), ignorata per i caduti. */
@@ -936,7 +960,18 @@ export class SpriteBank {
   private fixed = new Map<string, Uint8Array>();
 
   constructor() {
-    for (const kd of ['medkit', 'food', 'ammo', 'clip', 'smg', 'chaingun', 'coins', 'gem']) this.fixed.set(`item:${kd}`, item(kd).indexed());
+    for (const kd of ['medkit', 'food', 'ammo', 'clip', 'smg', 'chaingun', 'coins', 'gem', 'vest', 'grenade', 'key']) this.fixed.set(`item:${kd}`, item(kd).indexed());
+    this.fixed.set('proj:grenade', item('grenade').indexed());
+    // esplosione procedurale in 4 fasi
+    for (let f = 0; f < 4; f++) {
+      const p = new Paint(SS, SS);
+      const r = [14, 30, 40, 36][f];
+      if (f < 3) {
+        p.ball(64, 96, r, r * 0.9, FIRE_OUT, { amb: 1, dif: 0 });
+        p.ball(64, 96, r * 0.55, r * 0.5, FIRE_IN, { amb: 1, dif: 0 });
+      } else p.ball(64, 90, r, r * 0.8, [70, 66, 62], { amb: 0.6, dif: 0.4, grain: 0.3 });
+      this.fixed.set(`fx:boom${f}`, p.indexed());
+    }
     TEAMS.forEach((t, i) => {
       const c = PLAYER_COLORS[t.color].rgb;
       this.fixed.set(`base${i}`, teamBase(c).indexed());
@@ -958,7 +993,7 @@ export class SpriteBank {
     const fx = this.fixed.get(key);
     if (fx) return fx;
     let tex: Uint8Array | undefined;
-    const en = /^(guard|trooper|hound):(\w+)(?::(\d))?$/.exec(key);
+    const en = /^(guard|trooper|hound|officer):(\w+)(?::(\d))?$/.exec(key);
     const pl = /^p(\d+)h(\d+):(\w+)(?::(\d))?$/.exec(key);
     if (en) {
       const pose = en[2] as Pose, view = Number(en[3] ?? 0);

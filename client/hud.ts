@@ -80,8 +80,9 @@ export function drawHud(ctx: CanvasRenderingContext2D, W: number, H: number, s: 
     ['SALUTE', `${me.hp}`, me.hp > me.mhp / 2 ? '#7ee081' : me.hp > me.mhp / 4 ? '#f0c040' : '#ff5a4a'],
     ['MUNIZIONI', `${me.am}`, me.am > 0 ? '#e8e2d0' : '#ff5a4a'],
     ['ARMA', WEAPONS[me.w]?.name ?? '-', '#e8e2d0'],
+    ['ARMAT. · GRANATE', `${me.ar} · ${me.gr}`, me.ar > 0 ? '#8cc4ff' : 'rgba(220,220,210,0.55)'],
     ['PUNTI', `${myP?.sc ?? 0}`, '#f0c040'],
-    s.mode !== 'coop' ? ['FRAG', `${myP?.k ?? 0}`, '#ff9a6a'] : ['NEMICI', `${s.enemiesLeft}`, '#ff9a6a'],
+    s.mode !== 'coop' ? ['FRAG', `${myP?.k ?? 0}`, '#ff9a6a'] : [me.key ? 'NEMICI · TESSERA ✓' : 'NEMICI', `${s.enemiesLeft}`, '#ff9a6a'],
   ];
   const cw = W / cells.length;
   cells.forEach(([label, value, color], i) => {
@@ -90,7 +91,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, W: number, H: number, s: 
     font(9, false);
     ctx.fillStyle = 'rgba(220,220,210,0.6)';
     ctx.fillText(label, x, y + 12 * u);
-    font(i === 2 ? 14 : 20);
+    font(i === 2 || i === 3 ? 14 : 20);
     ctx.fillStyle = color;
     ctx.fillText(value, x, y + 30 * u);
   });

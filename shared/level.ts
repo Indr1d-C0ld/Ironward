@@ -24,7 +24,9 @@ export const TEX_TILE_GRIME = 12;
 export const TEX_EXIT = 13;
 export const TEX_DOOR = 14;
 export const TEX_DOOR_JAMB = 15;
-export const TEX_COUNT = 16;
+/** porta blindata della stanza d'uscita, si apre con la tessera */
+export const TEX_LOCKED = 16;
+export const TEX_COUNT = 17;
 
 export interface Theme {
   name: string;
@@ -50,6 +52,8 @@ export interface Door {
   secret: boolean;
   /** texture mostrata dalle pareti segrete */
   tex: number;
+  /** porta blindata: serve la tessera (cooperativa) */
+  locked?: boolean;
 }
 
 export interface Room { x: number; y: number; w: number; h: number; tex: number; }
@@ -324,13 +328,20 @@ export function generateLevel(seed: number, mode: GameMode): Level {
 
   // 7. Uscita (solo cooperativa): interruttore sulla parete della stanza più lontana.
   let exit: { x: number; y: number } | null = null;
+  let exitRoom = -1;
   if (mode === 'coop') {
     for (let oi = order.length - 1; oi >= 0 && !exit; oi--) {
       const rm = rooms[order[oi]];
-      const cands: [number, number][] = [];
-      for (let x = rm.x; x < rm.x + rm.w; x++) { cands.push([x, rm.y - 1]); cands.push([x, rm.y + rm.h]); }
-      for (let y = rm.y; y < rm.y + rm.h; y++) { cands.push([rm.x - 1, y]); cands.push([rm.x + rm.w, y]); }
-      const good = cands.filter(([x, y]) => isSolid(x, y) && doorAt[at(x, y)] < 0 && !hasDoorNear(x, y));
+      exitRoom = order[oi];
+      // [x, y, dx, dy]: cella della cornice e direzione verso l'esterno della stanza
+      const cands: [number, number, number, number][] = [];
+      for (let x = rm.x; x < rm.x + rm.w; x++) { cands.push([x, rm.y - 1, 0, -1]); cands.push([x, rm.y + rm.h, 0, 1]); }
+      for (let y = rm.y; y < rm.y + rm.h; y++) { cands.push([rm.x - 1, y, -1, 0]); cands.push([rm.x + rm.w, y, 1, 0]); }
+      // alle spalle dell'interruttore serve muro pieno: si deve azionare solo da dentro la stanza
+      const inMap = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
+      const good = cands
+        .filter(([x, y, dx, dy]) => isSolid(x, y) && doorAt[at(x, y)] < 0 && !hasDoorNear(x, y) && (!inMap(x + dx, y + dy) || isSolid(x + dx, y + dy)))
+        .map(([x, y]) => [x, y] as [number, number]);
       if (good.length) {
         const [x, y] = pick(r, good);
         walls[at(x, y)] = TEX_EXIT;
@@ -420,9 +431,46 @@ export function generateLevel(seed: number, mode: GameMode): Level {
     }
   }
 
+  // Cooperativa: porte blindate attorno alla stanza dell'uscita e tessera custodita dal Comandante.
+  if (mode === 'coop' && exitRoom >= 0) {
+    const ex = rooms[exitRoom];
+    const onRing = (x: number, y: number) =>
+      x >= ex.x - 1 && x <= ex.x + ex.w && y >= ex.y - 1 && y <= ex.y + ex.h && !(x >= ex.x && x < ex.x + ex.w && y >= ex.y && y < ex.y + ex.h);
+    const ring = doors.filter((d) => !d.secret && onRing(d.x, d.y));
+    // raggiungibilità dall'inizio senza attraversare le porte dell'uscita
+    const reach = new Uint8Array(W * H);
+    {
+      const [sx, sy] = center(rooms[startRoom]);
+      const q = [at(sx, sy)];
+      reach[q[0]] = 1;
+      const blocked = new Set(ring.map((d) => at(d.x, d.y)));
+      for (let h = 0; h < q.length; h++) {
+        const c = q[h], cx = c % W, cy = (c / W) | 0;
+        for (const [dx, dy] of DIRS) {
+          const n = at(cx + dx, cy + dy);
+          if (walls[n] === 0 && !reach[n] && !blocked.has(n)) { reach[n] = 1; q.push(n); }
+        }
+      }
+    }
+    const sealed = ring.length > 0 && !reach[at(...center(ex))];
+    // stanza della tessera: a metà percorso, raggiungibile senza tessera
+    const cands = order.filter((ri) => ri !== startRoom && ri !== exitRoom && reach[at(...center(rooms[ri]))]);
+    const keyRoom = cands.length ? cands[Math.min(cands.length - 1, Math.floor(cands.length * (0.5 + r() * 0.25)))] : -1;
+    if (keyRoom >= 0) {
+      const kr = rooms[keyRoom];
+      if (sealed) {
+        for (const d of ring) d.locked = true;
+        const c = freeCell(kr);
+        if (c) addItem('key', c[0], c[1]);
+      }
+      const o = freeCell(kr);
+      if (o) { occupied.add(at(o[0], o[1])); enemies.push({ kind: 'officer', x: o[0] + 0.5, y: o[1] + 0.5, a: pick(r, faces) }); }
+    }
+  }
+
   const loot: readonly (readonly [ItemKind, number])[] = mode === 'coop'
-    ? [['ammo', 0.35], ['food', 0.2], ['medkit', 0.15], ['coins', 0.2], ['gem', 0.1]]
-    : [['ammo', 0.45], ['medkit', 0.3], ['food', 0.25]];
+    ? [['ammo', 0.33], ['food', 0.18], ['medkit', 0.14], ['coins', 0.18], ['gem', 0.08], ['vest', 0.04], ['grenade', 0.05]]
+    : [['ammo', 0.4], ['medkit', 0.26], ['food', 0.2], ['vest', 0.07], ['grenade', 0.07]];
   for (const rm of rooms.slice(0, genRooms)) {
     const n = randInt(r, mode === 'coop' ? 0 : 1, 2);
     for (let k = 0; k < n; k++) {

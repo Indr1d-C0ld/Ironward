@@ -22,7 +22,9 @@ export function levelFromXp(xp: number): number {
   return l;
 }
 
-export const XP_ENEMY: Readonly<Record<EnemyKind, number>> = { guard: 10, trooper: 25, hound: 15 };
+export const XP_ENEMY: Readonly<Record<EnemyKind, number>> = { guard: 10, trooper: 25, hound: 15, officer: 60 };
+/** tessera dell'uscita trovata (cooperativa) */
+export const XP_KEY = 20;
 export const XP_FRAG = 50;
 export const XP_EXIT = 100;
 export const XP_CLEAR = 60;

@@ -28,10 +28,10 @@ export class Renderer {
   private rowColor = new Uint32Array(0);
   private rowTheme = -1;
   private hit = newRayHit();
-  private textures: Uint8Array[];
+  private textures: (Uint8Array | Uint32Array)[];
   private sprites: { get(key: string): SpriteTex | undefined };
 
-  constructor(W: number, H: number, fovDeg: number, textures: Uint8Array[], sprites: { get(key: string): SpriteTex | undefined }) {
+  constructor(W: number, H: number, fovDeg: number, textures: (Uint8Array | Uint32Array)[], sprites: { get(key: string): SpriteTex | undefined }) {
     this.W = W;
     this.H = H;
     this.canvas = document.createElement('canvas');
@@ -88,14 +88,18 @@ export class Renderer {
       const lineH = this.proj / perp;
       const top = half - lineH / 2;
       const tex = this.textures[hit.tex] ?? this.textures[1];
+      const fullWall = tex instanceof Uint32Array;
       const tx = Math.min(TS - 1, (hit.u * TS) | 0) * TS;
       const cm = lightLevel(this.fog(perp) * (hit.side ? 0.78 : 1) * bright) * 256;
       const y0 = Math.max(0, Math.ceil(top)), y1 = Math.min(H, Math.ceil(top + lineH));
       const step = TS / lineH;
       let ty = (y0 - top) * step;
       for (let y = y0; y < y1; y++) {
-        buf[y * W + x] = COLORMAP[cm + tex[tx + ((ty | 0) & (TS - 1))]];
+        const c = tex[tx + ((ty | 0) & (TS - 1))];
         ty += step;
+        buf[y * W + x] = fullWall
+          ? (0xff000000 | (LIGHT_MUL[cm + ((c >>> 16) & 255)] << 16) | (LIGHT_MUL[cm + ((c >>> 8) & 255)] << 8) | LIGHT_MUL[cm + (c & 255)]) >>> 0
+          : COLORMAP[cm + c];
       }
     }
 

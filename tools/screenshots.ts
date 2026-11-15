@@ -4,6 +4,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readPng } from './png.ts';
+import { wallTextures } from '../client/atlas.ts';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
@@ -108,11 +109,16 @@ const bank = new SpriteBank();
 // sprite e armi PixelLab, se l'atlante è stato costruito (npm run sprites)
 const SPR = fileURLToPath(new URL('../client/sprites/', import.meta.url));
 let meta: { muzzle: number[]; muzzleX?: number[]; weapons: string[] } | null = null;
+let pixWalls = new Map<number, Uint32Array>();
 if (existsSync(join(SPR, 'atlas.json'))) {
   const m = JSON.parse(readFileSync(join(SPR, 'atlas.json'), 'utf8'));
   const img = readPng(join(SPR, 'atlas.png'));
   bank.setAtlas({ ...m, rgba: img.px, width: img.w });
   meta = m;
+  if (m.walls?.length) {
+    const w = readPng(join(SPR, 'walls.png'));
+    pixWalls = wallTextures(m, w.px, w.w);
+  }
 }
 /** Arma in prima persona per colonne: PixelLab (ABGR) o procedurale (indici). */
 function weaponTex(w: number): Uint8Array | Uint32Array {
@@ -147,7 +153,7 @@ const sheetOf = (keys: (string | null)[][], cell = SS, gap = 4): Sheet => {
 }
 // pose
 {
-  const rows = (['guard', 'trooper', 'hound'] as const).map((k) => POSES.map((p) => enemySpriteKey(k, p, 1)));
+  const rows = (['guard', 'trooper', 'officer', 'hound'] as const).map((k) => POSES.map((p) => enemySpriteKey(k, p, 1)));
   const sh = sheetOf(rows);
   save('sprite-pose.png', sh.px, sh.w, sh.h, 2);
 }
@@ -164,7 +170,8 @@ const sheetOf = (keys: (string | null)[][], cell = SS, gap = 4): Sheet => {
 {
   const rows = [
     ['medkit', 'food', 'ammo', 'clip', 'smg', 'chaingun', 'coins', 'gem'].map((k) => `item:${k}`),
-    ['base0', 'flag0', 'flagc0', 'base1', 'flag1', 'flagc1'],
+    ['base0', 'flag0', 'flagc0', 'base1', 'flag1', 'flagc1', 'item:vest', 'item:key'],
+    ['item:grenade', 'proj:grenade', 'fx:boom0', 'fx:boom1', 'fx:boom2', 'fx:boom3'],
   ];
   const sh = sheetOf(rows);
   save('oggetti.png', sh.px, sh.w, sh.h, 2);
@@ -193,7 +200,8 @@ const sheetOf = (keys: (string | null)[][], cell = SS, gap = 4): Sheet => {
 }
 // texture delle pareti
 {
-  const tex = buildTextures();
+  const tex: (Uint8Array | Uint32Array)[] = buildTextures();
+  for (const [t, w] of pixWalls) tex[t] = w;
   const gap = 4, cols = 8;
   const n = tex.length - 1;
   const sh = new Sheet(cols * (TS + gap) + gap, Math.ceil(n / cols) * (TS + gap) + gap, [13, 15, 18]);
@@ -209,7 +217,8 @@ const sheetOf = (keys: (string | null)[][], cell = SS, gap = 4): Sheet => {
 
 // ------------------------------------------------------------------ scene di gioco
 
-const textures = buildTextures();
+const textures: (Uint8Array | Uint32Array)[] = buildTextures();
+for (const [t, tex] of pixWalls) textures[t] = tex;
 interface Spr { x: number; y: number; key: string; }
 interface Scene { file: string; mode: GameMode; seed: string; cam: (lvl: Level) => { x: number; y: number; a: number }; sprites: (lvl: Level, cam: { x: number; y: number }) => Spr[]; weapon: number; firing?: boolean; }
 
