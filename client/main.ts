@@ -47,6 +47,7 @@ void loadAtlas().then((pixellab) => {
   setTimeout(step, 50);
 });
 const sfx = new Sfx();
+try { if (localStorage.getItem('iw-music') === '0') sfx.music.setEnabled(false); } catch { /* ignora */ }
 
 let renderer: Renderer;
 function resize(): void {
@@ -131,6 +132,11 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyM' && !e.repeat) showMap = !showMap;
   if (e.code === 'KeyQ' && !locked()) { location.reload(); return; }
+  if (e.code === 'KeyN') {
+    sfx.music.setEnabled(!sfx.music.on);
+    try { localStorage.setItem('iw-music', sfx.music.on ? '1' : '0'); } catch { /* ignora */ }
+    feed.push({ text: sfx.music.on ? 'Musica attiva (N per spegnerla)' : 'Musica spenta (N per riattivarla)', t: performance.now() });
+  }
   if (e.code.startsWith('Digit')) {
     const n = Number(e.code.slice(5)) - 1;
     if (n >= 0 && n < WEAPONS.length) wantWeapon = n;
@@ -186,8 +192,12 @@ function connect(o: PlayOptions): void {
   };
 }
 
+/** ultimo momento di combattimento (spari, ferite, allarmi): fa salire la musica */
+let combatAt = -1e9;
+
 function loadLevel(seed: number, n: number): void {
   level = generateLevel(seed, mode);
+  sfx.music.play(level.seed, level.theme);
   levelNum = n;
   doorOpen = new Float32Array(level.doors.length);
   snaps = [];
@@ -277,6 +287,7 @@ function onEvent(ev: NetEvent, now: number): void {
   switch (ev.e) {
     case 'shot': {
       lastShot.set(ev.id, now);
+      if (volAt(ev.x, ev.y) > 0.15) combatAt = now;
       if (ev.id === myId) return;
       let name: SfxName;
       if (ev.w >= ENEMY_WEAPON_BASE) name = ENEMY_KINDS[ev.w - ENEMY_WEAPON_BASE] === 'hound' ? 'bite' : 'enemyShot';
@@ -285,7 +296,7 @@ function onEvent(ev: NetEvent, now: number): void {
       break;
     }
     case 'hurt':
-      if (ev.id === myId) { hurt = 1; sfx.play('hurt'); }
+      if (ev.id === myId) { hurt = 1; sfx.play('hurt'); combatAt = now; }
       if (ev.by === myId && ev.id !== myId) { hitMarker = now; sfx.play('hit'); }
       if (ev.id >= ENEMY_ID_BASE) {
         const e = snaps[snaps.length - 1]?.enemies.get(ev.id);
@@ -314,7 +325,7 @@ function onEvent(ev: NetEvent, now: number): void {
       sfx.play('secret', volAt(ev.x + 0.5, ev.y + 0.5));
       if (volAt(ev.x, ev.y) > 0.85) feed.push({ text: 'Passaggio segreto!', t: now });
       break;
-    case 'alert': sfx.play('alert', volAt(ev.x, ev.y)); break;
+    case 'alert': sfx.play('alert', volAt(ev.x, ev.y)); combatAt = now; break;
     case 'msg': feed.push({ text: ev.text, t: now }); break;
     case 'xp':
       if (ev.id === myId) {
@@ -427,7 +438,13 @@ function frame(now: number): void {
   fireAnim = Math.max(0, fireAnim - dt);
   smooth.x *= Math.pow(0.001, dt);
   smooth.y *= Math.pow(0.001, dt);
-  if (moving && alive) bobPhase += dt * 9;
+  if (moving && alive) {
+    const before = Math.floor(bobPhase / Math.PI);
+    bobPhase += dt * 9;
+    if (Math.floor(bobPhase / Math.PI) !== before) sfx.play('step', 0.5); // un passo a ogni oscillazione
+  }
+  // musica: piena durante gli scontri, poi torna calma in qualche secondo
+  sfx.music.setIntensity(1 - Math.max(0, (now - combatAt - 3000) / 4000));
 
   const alpha = acc / INPUT_DT;
   const cam = camOverride ?? { x: prev.x + (local.x - prev.x) * alpha + smooth.x, y: prev.y + (local.y - prev.y) * alpha + smooth.y, a: angle };
@@ -511,6 +528,8 @@ if (new URLSearchParams(location.search).has('debug')) {
       lookAt: (x: number, y: number) => { angle = Math.atan2(y - local.y, x - local.x); },
       level: () => level,
       event: (ev: NetEvent) => onEvent(ev, performance.now()),
+      /** stato e livello dell'uscita audio */
+      audio: () => ({ state: sfx.state, level: sfx.level(), music: sfx.music.on }),
       /** sposta solo la telecamera (null per tornare al giocatore) */
       peek: (c: { x: number; y: number; a: number } | null) => { camOverride = c; },
     },

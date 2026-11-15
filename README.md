@@ -51,7 +51,8 @@ livelli sono **generati dal codice**. Nessun asset di altri giochi.
 | **Mappe** | 64×64 celle generate da un seed condivisibile; simmetriche nelle modalità a squadre |
 | **Progressione** | Account, EXP, 50 livelli, colori e copricapi sbloccabili, bonus in cooperativa |
 | **Social** | Clan con sigla e codice d'invito, sfide tra clan, classifiche settimanali e di sempre |
-| **Grafica** | Palette VGA a 256 colori, luce a colormap, sprite 128×128 con 8 viste |
+| **Grafica** | Sprite e pareti PixelLab, luce a 32 scalini, figure a 8 viste |
+| **Audio** | Musica chiptune composta dal seed di ogni livello, effetti sintetizzati con riverbero |
 | **Tecnica** | TypeScript su Node 26 (senza compilazione lato server), Canvas 2D, WebSocket, SQLite |
 | **Gestione** | Pannello di amministrazione: espulsioni, sospensioni, correzioni, registro |
 
@@ -90,6 +91,7 @@ nella stessa stanza gioca con te; il link `?room=nome&mode=ctf` porta direttamen
 | E / spazio | apri porte, pareti segrete, interruttore d'uscita |
 | 1–4, rotella | coltello, pistola, mitraglietta, mitragliatrice |
 | G | lancia una granata |
+| N | musica sì/no (la scelta viene ricordata) |
 | Tab | classifica della partita |
 | M | minimappa |
 | T / Invio | chat |
@@ -250,6 +252,20 @@ Stile VGA/SVGA anni '90.
 
 ![Le texture delle pareti](docs/images/texture.png)
 
+## Audio
+
+Tutto il suono è generato in tempo reale con WebAudio, senza file audio.
+
+- **Musica procedurale**: ogni livello compone il proprio brano chiptune dal seed della mappa
+  (tonalità, giro di accordi, basso, melodia con variazioni, arpeggio e batteria su 8 battute in
+  loop). Il tema decide il carattere: marcia in minore per la Fortezza, frigio cupo e incalzante per
+  il Bunker, minore armonico lento per l'Archivio, dorico sintetico per il Laboratorio. Durante gli
+  scontri (spari vicini, allarmi, ferite) batteria, arpeggio e melodia si fanno più presenti, poi
+  in qualche secondo la musica torna calma. Il tasto **N** la spegne o la riaccende.
+- **Effetti**: spari con schiocco, corpo e coda, esplosioni, porte, passi, nemici, raccolte e
+  segnali delle squadre, tutti sintetizzati. Spari, porte ed esplosioni passano anche da un
+  **riverbero** generato al volo, che dà il suono dei corridoi di pietra.
+
 ## Mappe procedurali
 
 Ogni livello è una griglia 64×64 generata da un seed con un PRNG deterministico (mulberry32):
@@ -341,7 +357,7 @@ deploy/           unità systemd e configurazione nginx
 | `npm run build` | compila il client con esbuild in `client/dist/` |
 | `npm start` | avvia il server |
 | `npm run check` | type-check con `tsc` (strict, solo sintassi cancellabile) |
-| `npm test` | generatore su 1200 mappe, database, simulazione delle stanze, bot WebSocket end-to-end |
+| `npm test` | generatore su 1200 mappe, musica su 800 brani, database, simulazione delle stanze, bot WebSocket end-to-end |
 | `npm run sprites` | impacchetta gli sprite di `assets/pixellab/` nell'atlante del client |
 | `npm run screenshots` | rigenera le immagini di `docs/images/` dal motore |
 
@@ -393,7 +409,6 @@ Accesso e registrazione: 12 tentativi ogni 10 minuti per IP; azioni sui clan: 30
 ## Prossimi passi
 
 - Prova sul campo con più giocatori e bilanciamento di armi e IA
-- Musica ed effetti sonori (PixelLab richiede l'abbonamento di livello 2; in alternativa, procedurali)
 - Prestigio oltre il livello 50, obiettivi e sfide settimanali
 - Pagina profilo pubblica e storico delle partite
 - Più temi e stanze "prefab" da mescolare al generatore
