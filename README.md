@@ -381,5 +381,6 @@ Accesso e registrazione: 12 tentativi ogni 10 minuti per IP; azioni sui clan: 30
 
 ---
 
-Repository privato. Codice, grafica e suoni sono originali; le meccaniche sono ispirate ai
-classici del genere, senza riutilizzarne contenuti.
+Codice, grafica e suoni sono originali; le meccaniche sono ispirate ai classici del genere,
+senza riutilizzarne contenuti. Il repository non ha ancora una licenza: il codice è consultabile,
+ma per riutilizzarlo serve il permesso dell'autore.
