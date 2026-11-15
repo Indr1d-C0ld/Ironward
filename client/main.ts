@@ -9,7 +9,8 @@ import {
   BTN_FIRE, BTN_USE, ENEMY_ID_BASE, ENEMY_WEAPON_BASE,
   type InputCmd, type NetEnemy, type NetEvent, type NetMe, type NetPlayer, type ServerMsg, type SnapMsg,
 } from '../shared/protocol.ts';
-import { buildTextures, drawWeapon, enemySpriteKey, playerSpriteKey, SpriteBank, viewIndex, type Pose } from './art.ts';
+import { buildTextures, drawWeapon, enemySpriteKey, playerSpriteKey, setWeaponImages, SpriteBank, viewIndex, type Pose } from './art.ts';
+import { loadAtlas } from './atlas.ts';
 import { clearToken, initMenu, type PlayOptions } from './menu.ts';
 import { unlocksAt } from '../shared/progression.ts';
 import { Sfx, type SfxName } from './audio.ts';
@@ -30,13 +31,20 @@ const menu = $<HTMLDivElement>('menu');
 const chatInput = $<HTMLInputElement>('chat');
 const textures = buildTextures();
 const spriteTex = new SpriteBank();
-// le figure dei nemici si preparano a pezzi nei momenti liberi, per non bloccare l'avvio
-{
+// Sprite e armi disegnati con PixelLab, caricati in parallelo senza bloccare il menu;
+// finché non arrivano (o se mancano) si usa la grafica procedurale.
+void loadAtlas().then((pixellab) => {
+  if (pixellab) {
+    spriteTex.setAtlas(pixellab.atlas);
+    setWeaponImages(pixellab.weapons, pixellab.atlas.muzzle, pixellab.atlas.muzzleX);
+    return;
+  }
+  // le figure procedurali dei nemici si preparano a pezzi nei momenti liberi
   const todo: string[] = [];
   for (const kind of ['guard', 'trooper', 'hound']) for (const pose of ['stand', 'walk1', 'walk2', 'aim', 'fire', 'pain', 'dead'] as Pose[]) for (let v = 0; v < 8; v++) todo.push(enemySpriteKey(kind, pose, v));
   const step = () => { const t0 = performance.now(); while (todo.length && performance.now() - t0 < 6) spriteTex.get(todo.pop()!); if (todo.length) setTimeout(step, 16); };
   setTimeout(step, 50);
-}
+});
 const sfx = new Sfx();
 
 let renderer: Renderer;

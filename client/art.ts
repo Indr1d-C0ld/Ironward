@@ -9,6 +9,7 @@ import {
 } from '../shared/level.ts';
 import { PLAYER_COLORS, TEAMS } from '../shared/defs.ts';
 import { dithered, indexedToCanvas, Paint, type Mat, type RGB } from './palette.ts';
+import { atlasSprite, type Atlas } from './atlas.ts';
 
 /** lato delle texture delle pareti */
 export const TS = 64;
@@ -910,15 +911,37 @@ export function viewIndex(facing: number, ex: number, ey: number, cx: number, cy
  * servono la prima volta, poi restano in memoria.
  */
 export class SpriteBank {
-  private m = new Map<string, Uint8Array>();
+  private m = new Map<string, Uint8Array | Uint32Array>();
+  private atlas: Atlas | null = null;
+
+  /** Usa gli sprite di PixelLab dove ci sono; il resto resta procedurale. */
+  setAtlas(a: Atlas): void {
+    this.atlas = a;
+    this.m.clear();
+  }
+
+  /** Sprite dall'atlante PixelLab, se presente per questa chiave. */
+  private fromAtlas(key: string): Uint32Array | undefined {
+    const a = this.atlas;
+    if (!a) return undefined;
+    const pick = (k: string, color?: RGB) => (k in a.entries ? atlasSprite(a, a.entries[k], color) : undefined);
+    const pl = /^p(\d+)h(\d+):(.+)$/.exec(key);
+    if (pl) return pick(`player${pl[2]}:${pl[3]}`, PLAYER_COLORS[Number(pl[1])]?.rgb);
+    const team = /^(base|flag|flagc)(\d)$/.exec(key);
+    if (team) return pick(team[1], PLAYER_COLORS[TEAMS[Number(team[2])]?.color ?? 0]?.rgb);
+    return pick(key);
+  }
+
+  /** oggetti e basi procedurali, usati quando l'atlante non li contiene */
+  private fixed = new Map<string, Uint8Array>();
 
   constructor() {
-    for (const kd of ['medkit', 'food', 'ammo', 'clip', 'smg', 'chaingun', 'coins', 'gem']) this.m.set(`item:${kd}`, item(kd).indexed());
+    for (const kd of ['medkit', 'food', 'ammo', 'clip', 'smg', 'chaingun', 'coins', 'gem']) this.fixed.set(`item:${kd}`, item(kd).indexed());
     TEAMS.forEach((t, i) => {
       const c = PLAYER_COLORS[t.color].rgb;
-      this.m.set(`base${i}`, teamBase(c).indexed());
-      this.m.set(`flag${i}`, briefcase(c, false).indexed());
-      this.m.set(`flagc${i}`, briefcase(c, true).indexed());
+      this.fixed.set(`base${i}`, teamBase(c).indexed());
+      this.fixed.set(`flag${i}`, briefcase(c, false).indexed());
+      this.fixed.set(`flagc${i}`, briefcase(c, true).indexed());
     });
   }
 
@@ -927,9 +950,13 @@ export class SpriteBank {
     for (const kind of ['guard', 'trooper', 'hound']) for (const pose of POSES) for (let v = 0; v < VIEWS; v++) this.get(enemySpriteKey(kind, pose, v));
   }
 
-  get(key: string): Uint8Array | undefined {
+  get(key: string): Uint8Array | Uint32Array | undefined {
     const hit = this.m.get(key);
     if (hit) return hit;
+    const fromA = this.fromAtlas(key);
+    if (fromA) { this.m.set(key, fromA); return fromA; }
+    const fx = this.fixed.get(key);
+    if (fx) return fx;
     let tex: Uint8Array | undefined;
     const en = /^(guard|trooper|hound):(\w+)(?::(\d))?$/.exec(key);
     const pl = /^p(\d+)h(\d+):(\w+)(?::(\d))?$/.exec(key);
@@ -948,7 +975,7 @@ export class SpriteBank {
   }
 
   keys(): string[] {
-    return [...this.m.keys()];
+    return [...new Set([...this.fixed.keys(), ...this.m.keys()])];
   }
 }
 
@@ -1070,6 +1097,18 @@ export const weaponIndexed = (w: number): Uint8Array => weaponArt(w).indexed(10)
 export const flashIndexed = (): Uint8Array => flashArt().indexed(6);
 
 let weaponCanvases: HTMLCanvasElement[] | null = null;
+/** quota della bocca delle armi PixelLab (dal fondo, negativa), calcolata dal build */
+let weaponMuzzle: number[] | null = null;
+let weaponMuzzleX: number[] | null = null;
+
+/** Sostituisce le armi procedurali con quelle di PixelLab (canvas WW x WH). */
+export function setWeaponImages(canvases: HTMLCanvasElement[], muzzle: number[], muzzleX?: number[]): void {
+  if (canvases.length < 4) return;
+  weaponCanvases = canvases;
+  weaponMuzzle = muzzle;
+  weaponMuzzleX = muzzleX ?? null;
+  flashCanvas ??= indexedToCanvas(flashIndexed(), 64, 56);
+}
 let flashCanvas: HTMLCanvasElement | null = null;
 /** quota della bocca dell'arma rispetto al fondo dell'immagine, e scala della vampa */
 export const MUZZLE: readonly [number, number][] = [[0, 0], [-122, 0.8], [-142, 1], [-148, 1.35]];
@@ -1088,12 +1127,15 @@ export function drawWeapon(ctx: CanvasRenderingContext2D, w: number, firing: boo
   let ox = 0, oy = 0;
   if (w === 0 && firing) { ox = -16; oy = -28; } // affondo
   ctx.imageSmoothingEnabled = false;
-  if (w > 0 && firing) {
-    const [my, s] = MUZZLE[w];
-    const fw = Math.round(64 * s * sc), fh = Math.round(56 * s * sc);
-    ctx.drawImage(flashCanvas!, Math.round(cx - fw / 2), Math.round(by + my * sc - fh / 2), fw, fh);
-    oy = 3; // rinculo
-  }
+  if (w > 0 && firing) oy = 3; // rinculo
   const iw = Math.round(WW * sc), ih = Math.round(WH * sc);
   ctx.drawImage(weaponCanvases[w] ?? weaponCanvases[1], Math.round(cx - iw / 2 + ox * sc), Math.round(by - ih + oy * sc), iw, ih);
+  if (w > 0 && firing) {
+    // vampa sopra l'arma, appena oltre la bocca della canna
+    const [my0, s] = MUZZLE[w];
+    const my = weaponMuzzle?.[w] ?? my0;
+    const fw = Math.round(64 * s * sc), fh = Math.round(56 * s * sc);
+    const mx = (weaponMuzzleX?.[w] ?? 0) * sc;
+    ctx.drawImage(flashCanvas!, Math.round(cx + mx - fw / 2), Math.round(by + my * sc - fh * 0.45), fw, fh);
+  }
 }

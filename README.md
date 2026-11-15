@@ -8,16 +8,16 @@
 ![Node.js](https://img.shields.io/badge/Node.js-26-5fa04e)
 ![WebSocket](https://img.shields.io/badge/rete-WebSocket%20autoritativo-8a5cf5)
 ![SQLite](https://img.shields.io/badge/database-node%3Asqlite-0f80cc)
-![Asset](https://img.shields.io/badge/asset-100%25%20procedurali-e0a830)
+![Sprite](https://img.shields.io/badge/sprite-PixelLab-e0a830)
 ![Licenza](https://img.shields.io/badge/licenza-GPL--3.0-bd0000)
 
 Ironward riprende le meccaniche degli FPS a griglia dei primi anni '90 (raycasting, porte
 scorrevoli, pareti segrete, sprite orientati) e le porta in rete: cooperativa contro l'IA,
 deathmatch, squadre, cattura dei documenti, account con livelli, clan e classifiche.
 
-Si gioca aprendo una pagina web: niente installazione. Grafica, suoni, nemici e livelli sono
-**originali e generati dal codice**: nel repository non c'è un solo file di immagine o di audio
-usato dal gioco, e nessun asset di altri giochi.
+Si gioca aprendo una pagina web: niente installazione. Personaggi, nemici, oggetti e armi sono
+pixel art **originale disegnata con [PixelLab](https://www.pixellab.ai)**; pareti, palette, suoni e
+livelli sono **generati dal codice**. Nessun asset di altri giochi.
 
 ---
 
@@ -210,23 +210,25 @@ prima di essere corrette.
 
 ## Grafica
 
-Stile VGA/SVGA anni '90, con disegni originali generati all'avvio (circa 0,3 secondi).
+Stile VGA/SVGA anni '90.
 
 <img src="docs/images/palette.png" alt="La palette di 256 colori" width="160" align="right">
 
-- **Palette di 256 colori** in 16 rampe da 16 tonalità (grigio, pietra, legno, pelle, rosso,
-  arancio, oro, cachi, verde, ciano, blu, acciaio, viola, mattone, muschio, fuoco), con ombre fredde
-  e luci calde. Tutto viene salvato come indici di palette e ridotto con un dithering ordinato 4×4.
-- **Luce a colormap**: 32 tabelle riportano ogni colore a quello più vicino della palette per ogni
-  livello di luce. La distanza scurisce a scalini, pavimento e soffitto mostrano le bande tipiche
-  dell'epoca e la vampa dell'arma illumina la scena.
-- **Sprite 128×128** dipinti con primitive ombreggiate (sfere, arti cilindrici, poligoni, riflessi
-  sul metallo, grana sulla stoffa) e contorno scuro.
-- **8 viste** per soldati, giocatori e mastini: ogni figura è uno scheletro 3D ruotato e proiettato,
-  con le parti disegnate dalla più lontana alla più vicina. Bottoni, tasche, viso e bandoliera stanno
-  sulla superficie del corpo e compaiono solo dal lato giusto; il client sceglie la vista dall'angolo
-  tra la direzione della figura e la telecamera.
-- **Armi in prima persona** con avambracci e mani che impugnano l'arma, vampa e rinculo.
+- **Sprite PixelLab**: sentinella, assaltatore, mastino, 5 modelli di giocatore (uno per copricapo),
+  oggetti, stendardi, valigette e armi in prima persona sono pixel art generata con PixelLab, a
+  **8 direzioni** con animazioni di passo, mira e fuoco, dolore e caduta. I file sorgente sono in
+  `assets/pixellab/`; `npm run sprites` li impacchetta in un atlante (`client/sprites/`).
+- **Colori di squadra**: le divise dei giocatori, gli stendardi e le valigette sono disegnati in un
+  verde "chiave" che il client sostituisce con il colore del giocatore o della squadra, mantenendo
+  le ombre. Cinque modelli bastano così per 8 colori × 5 copricapi.
+- **Palette di 256 colori** in 16 rampe da 16 tonalità per pareti, pavimenti e soffitti, ridotte con
+  un dithering ordinato 4×4.
+- **Luce a 32 scalini**: la distanza scurisce pareti e sprite a gradini, pavimento e soffitto
+  mostrano le bande tipiche dell'epoca e la vampa dell'arma illumina la scena. Gli sprite PixelLab
+  restano a colori pieni e ricevono la stessa luce, così non perdono sfumature.
+- **Il client sceglie la vista** dall'angolo tra la direzione della figura e la telecamera.
+- **Ripiego procedurale**: se l'atlante manca, il gioco disegna da sé figure (scheletri 3D proiettati
+  in 8 viste), oggetti e armi.
 
 ![Soldato, assaltatore, mastino e giocatore nelle 8 viste](docs/images/sprite-8-viste.png)
 
@@ -261,7 +263,7 @@ flowchart LR
   subgraph Browser
     M[menu.ts<br/>accesso, profilo, clan] --> G[main.ts<br/>input, predizione,<br/>interpolazione]
     G --> R[render.ts<br/>raycaster + sprite]
-    A[art.ts + palette.ts<br/>grafica procedurale] --> R
+    A[atlas.ts + art.ts<br/>sprite PixelLab,<br/>palette e luce] --> R
     G --> H[hud.ts]
     G --> S[audio.ts<br/>WebAudio]
   end
@@ -324,6 +326,7 @@ deploy/           unità systemd e configurazione nginx
 | `npm start` | avvia il server |
 | `npm run check` | type-check con `tsc` (strict, solo sintassi cancellabile) |
 | `npm test` | generatore su 1200 mappe, database, simulazione delle stanze, bot WebSocket end-to-end |
+| `npm run sprites` | impacchetta gli sprite di `assets/pixellab/` nell'atlante del client |
 | `npm run screenshots` | rigenera le immagini di `docs/images/` dal motore |
 
 Strumenti di sviluppo:
@@ -392,5 +395,6 @@ Ironward è software libero: puoi ridistribuirlo e modificarlo secondo i termini
 o (a tua scelta) qualsiasi versione successiva. È distribuito nella speranza che sia utile, ma
 **senza alcuna garanzia**; vedi il file [LICENSE](LICENSE) per i dettagli.
 
-La licenza copre tutto il repository: codice, grafica e suoni, che sono generati dal codice stesso.
-Le meccaniche sono ispirate ai classici del genere, senza riutilizzarne contenuti.
+La licenza copre tutto il repository: codice, grafica e suoni. Gli sprite sono stati generati con
+PixelLab dall'autore del progetto. Le meccaniche sono ispirate ai classici del genere, senza
+riutilizzarne contenuti.

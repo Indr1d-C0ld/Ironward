@@ -5,7 +5,10 @@
 import { THEMES, type Level } from '../shared/level.ts';
 import { castRay, newRayHit } from '../shared/physics.ts';
 import { SS, TS } from './art.ts';
-import { COLORMAP, lightLevel, nearest } from './palette.ts';
+import { COLORMAP, LIGHT_MUL, lightLevel, nearest } from './palette.ts';
+
+/** Sprite: indici di palette (procedurali) oppure ABGR a colori pieni (PixelLab). */
+export type SpriteTex = Uint8Array | Uint32Array;
 
 export interface Camera { x: number; y: number; a: number; }
 export interface SpriteInst { x: number; y: number; key: string; dist?: number; }
@@ -26,9 +29,9 @@ export class Renderer {
   private rowTheme = -1;
   private hit = newRayHit();
   private textures: Uint8Array[];
-  private sprites: { get(key: string): Uint8Array | undefined };
+  private sprites: { get(key: string): SpriteTex | undefined };
 
-  constructor(W: number, H: number, fovDeg: number, textures: Uint8Array[], sprites: { get(key: string): Uint8Array | undefined }) {
+  constructor(W: number, H: number, fovDeg: number, textures: Uint8Array[], sprites: { get(key: string): SpriteTex | undefined }) {
     this.W = W;
     this.H = H;
     this.canvas = document.createElement('canvas');
@@ -116,6 +119,7 @@ export class Renderer {
       if (x0 >= x1) continue;
       const step = SS / size;
       const cm = lightLevel(this.fog(tY) * bright) * 256;
+      const full = tex instanceof Uint32Array;
       for (let x = x0; x < x1; x++) {
         if (tY >= zbuf[x]) continue;
         const col = Math.min(SS - 1, ((x - left) * step) | 0) * SS;
@@ -123,7 +127,10 @@ export class Renderer {
         for (let y = y0; y < y1; y++) {
           const c = tex[col + Math.min(SS - 1, ty | 0)];
           ty += step;
-          if (c) buf[y * W + x] = COLORMAP[cm + c];
+          if (!c) continue;
+          buf[y * W + x] = full
+            ? (0xff000000 | (LIGHT_MUL[cm + ((c >>> 16) & 255)] << 16) | (LIGHT_MUL[cm + ((c >>> 8) & 255)] << 8) | LIGHT_MUL[cm + (c & 255)]) >>> 0
+            : COLORMAP[cm + c];
         }
       }
     }

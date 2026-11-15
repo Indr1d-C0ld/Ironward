@@ -1,13 +1,15 @@
-// Pagina di sviluppo: mostra tutte le texture e le sprite procedurali.
+// Pagina di sviluppo: mostra texture, sprite (PixelLab o procedurali) e armi.
 // Aprire /gallery.html dopo `npm run build`.
 
 import { buildTextures, drawWeapon, enemySpriteKey, HAT_STYLES, playerSpriteKey, POSES, SpriteBank, SS, TS, VIEWS } from './art.ts';
 import { PLAYER_COLORS } from '../shared/defs.ts';
 import { indexedToCanvas, PALETTE } from './palette.ts';
+import { loadAtlas } from './atlas.ts';
+import { setWeaponImages } from './art.ts';
 
 const VIEW = 192;
 
-function tile(tex: Uint8Array, size: number, label: string, bg: string): HTMLElement {
+function tile(tex: Uint8Array | Uint32Array, size: number, label: string, bg: string): HTMLElement {
   const fig = document.createElement('figure');
   const c = indexedToCanvas(tex, size, size);
   c.style.width = c.style.height = `${VIEW}px`;
@@ -22,6 +24,8 @@ const texSec = document.getElementById('textures')!;
 buildTextures().forEach((t, i) => { if (i > 0) texSec.appendChild(tile(t, TS, `tex ${i}`, '#000')); });
 const sprSec = document.getElementById('sprites')!;
 const bank = new SpriteBank();
+const loaded = await loadAtlas();
+if (loaded) { bank.setAtlas(loaded.atlas); setWeaponImages(loaded.weapons, loaded.atlas.muzzle, loaded.atlas.muzzleX); }
 const keys = bank.keys();
 // nemici: tutte le pose viste di fronte, poi le 8 viste di camminata e mira
 for (const kind of ['guard', 'trooper', 'hound']) {

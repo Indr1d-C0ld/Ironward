@@ -2,7 +2,8 @@
 // scene di gioco renderizzate dal raycaster e tavole di sprite, armi, texture e palette.
 // Uso: node tools/screenshots.ts [cartella]   (default docs/images)
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readPng } from './png.ts';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
@@ -88,13 +89,15 @@ class Sheet {
     for (let i = 0; i < w * h; i++) { this.px[i * 4] = bg[0]; this.px[i * 4 + 1] = bg[1]; this.px[i * 4 + 2] = bg[2]; this.px[i * 4 + 3] = 255; }
   }
   /** Disegna un'immagine indicizzata per colonne (alto `ih`). */
-  blit(idx: Uint8Array, iw: number, ih: number, ox: number, oy: number): void {
+  blit(idx: Uint8Array | Uint32Array, iw: number, ih: number, ox: number, oy: number): void {
+    ox = Math.round(ox); oy = Math.round(oy);
     for (let x = 0; x < iw; x++) {
       for (let y = 0; y < ih; y++) {
         const v = idx[x * ih + y];
         const X = ox + x, Y = oy + y;
         if (!v || X < 0 || Y < 0 || X >= this.w || Y >= this.h) continue;
         const i = (Y * this.w + X) * 4;
+        if (idx instanceof Uint32Array) { this.px[i] = v & 255; this.px[i + 1] = (v >>> 8) & 255; this.px[i + 2] = (v >>> 16) & 255; continue; }
         this.px[i] = PALETTE[v * 3]; this.px[i + 1] = PALETTE[v * 3 + 1]; this.px[i + 2] = PALETTE[v * 3 + 2];
       }
     }
@@ -102,6 +105,28 @@ class Sheet {
 }
 
 const bank = new SpriteBank();
+// sprite e armi PixelLab, se l'atlante è stato costruito (npm run sprites)
+const SPR = fileURLToPath(new URL('../client/sprites/', import.meta.url));
+let meta: { muzzle: number[]; muzzleX?: number[]; weapons: string[] } | null = null;
+if (existsSync(join(SPR, 'atlas.json'))) {
+  const m = JSON.parse(readFileSync(join(SPR, 'atlas.json'), 'utf8'));
+  const img = readPng(join(SPR, 'atlas.png'));
+  bank.setAtlas({ ...m, rgba: img.px, width: img.w });
+  meta = m;
+}
+/** Arma in prima persona per colonne: PixelLab (ABGR) o procedurale (indici). */
+function weaponTex(w: number): Uint8Array | Uint32Array {
+  if (!meta || meta.weapons.length < 4) return weaponIndexed(w);
+  const img = readPng(join(SPR, meta.weapons[w]));
+  const out = new Uint32Array(WW * WH);
+  for (let x = 0; x < Math.min(WW, img.w); x++) for (let y = 0; y < Math.min(WH, img.h); y++) {
+    const i = (y * img.w + x) * 4;
+    if (img.px[i + 3] >= 128) out[x * WH + y] = (0xff000000 | (img.px[i + 2] << 16) | (img.px[i + 1] << 8) | img.px[i]) >>> 0;
+  }
+  return out;
+}
+const muzzleOf = (w: number) => meta?.muzzle[w] ?? MUZZLE[w][0];
+const muzzleXOf = (w: number) => meta?.muzzleX?.[w] ?? 0;
 const sheetOf = (keys: (string | null)[][], cell = SS, gap = 4): Sheet => {
   const cols = Math.max(...keys.map((r) => r.length));
   const sh = new Sheet(cols * (cell + gap) + gap, keys.length * (cell + gap) + gap);
@@ -150,18 +175,18 @@ const sheetOf = (keys: (string | null)[][], cell = SS, gap = 4): Sheet => {
   const sh = new Sheet(4 * (WW + gap) + gap, 2 * (WH + 40 + gap) + gap);
   const flash = flashIndexed();
   for (let w = 0; w < 4; w++) {
-    const img = weaponIndexed(w);
+    const img = weaponTex(w);
     for (let f = 0; f < 2; f++) {
       const ox = gap + w * (WW + gap), oy = gap + f * (WH + 40 + gap) + 40;
+      sh.blit(img, WW, WH, ox + (f && w === 0 ? -16 : 0), oy + (f && w === 0 ? -28 : f ? 3 : 0));
       if (f && w > 0) {
         // vampa più piccola e ridimensionata come in gioco
-        const [my, s] = MUZZLE[w];
+        const s = MUZZLE[w][1], my = muzzleOf(w);
         const fw = Math.round(64 * s), fh = Math.round(56 * s);
         const scaled = new Uint8Array(fw * fh);
         for (let x = 0; x < fw; x++) for (let y = 0; y < fh; y++) scaled[x * fh + y] = flash[Math.floor((x * 64) / fw) * 56 + Math.floor((y * 56) / fh)];
-        sh.blit(scaled, fw, fh, ox + WW / 2 - fw / 2, oy + WH + my - fh / 2);
+        sh.blit(scaled, fw, fh, ox + WW / 2 + muzzleXOf(w) - fw / 2, oy + WH + my - fh * 0.45);
       }
-      sh.blit(img, WW, WH, ox + (f && w === 0 ? -16 : 0), oy + (f && w === 0 ? -28 : f ? 3 : 0));
     }
   }
   save('armi.png', sh.px, sh.w, sh.h, 2);
@@ -269,22 +294,23 @@ for (const sc of scenes) {
   const s = (H / 270) * 0.82;
   const iw = Math.round(WW * s), ih = Math.round(WH * s);
   const cx = W / 2, by = H + 2; // senza HUD l'arma poggia sul bordo inferiore
-  const put = (idx: Uint8Array, sw: number, sh: number, ox: number, oy: number, dw: number, dh: number) => {
+  const put = (idx: Uint8Array | Uint32Array, sw: number, sh: number, ox: number, oy: number, dw: number, dh: number) => {
     for (let x = 0; x < dw; x++) {
       for (let y = 0; y < dh; y++) {
         const v = idx[Math.floor((x * sw) / dw) * sh + Math.floor((y * sh) / dh)];
         const X = ox + x, Y = oy + y;
         if (!v || X < 0 || Y < 0 || X >= W || Y >= H) continue;
         const i = (Y * W + X) * 4;
+        if (idx instanceof Uint32Array) { sheet.px[i] = v & 255; sheet.px[i + 1] = (v >>> 8) & 255; sheet.px[i + 2] = (v >>> 16) & 255; sheet.px[i + 3] = 255; continue; }
         sheet.px[i] = PALETTE[v * 3]; sheet.px[i + 1] = PALETTE[v * 3 + 1]; sheet.px[i + 2] = PALETTE[v * 3 + 2]; sheet.px[i + 3] = 255;
       }
     }
   };
+  put(weaponTex(sc.weapon), WW, WH, Math.round(cx - iw / 2), Math.round(by - ih + (sc.firing ? 3 * s : 0)), iw, ih);
   if (sc.firing) {
-    const [my, fs] = MUZZLE[sc.weapon];
+    const fs = MUZZLE[sc.weapon][1], my = muzzleOf(sc.weapon);
     const fw = Math.round(64 * fs * s), fh = Math.round(56 * fs * s);
-    put(flashIndexed(), 64, 56, Math.round(cx - fw / 2), Math.round(by + my * s - fh / 2), fw, fh);
+    put(flashIndexed(), 64, 56, Math.round(cx + muzzleXOf(sc.weapon) * s - fw / 2), Math.round(by + my * s - fh * 0.45), fw, fh);
   }
-  put(weaponIndexed(sc.weapon), WW, WH, Math.round(cx - iw / 2), Math.round(by - ih + (sc.firing ? 3 * s : 0)), iw, ih);
   save(sc.file, rgba, W, H, 3);
 }

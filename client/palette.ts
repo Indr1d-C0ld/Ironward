@@ -85,6 +85,16 @@ for (let l = 0; l < LIGHT_LEVELS; l++) {
   }
 }
 
+/**
+ * Per gli sprite a colori pieni (PixelLab): LIGHT_MUL[livello * 256 + canale] è il canale
+ * illuminato con lo stesso livello delle colormap, sopra la luce normale schiarito verso il bianco.
+ */
+export const LIGHT_MUL = new Uint8Array(LIGHT_LEVELS * 256);
+for (let l = 0; l < LIGHT_LEVELS; l++) {
+  const k = l / LIGHT_NORMAL, lift = Math.max(0, k - 1) * 60;
+  for (let v = 0; v < 256; v++) LIGHT_MUL[l * 256 + v] = Math.min(255, Math.round(v * k + lift));
+}
+
 /** Livello di colormap per un fattore di luce (1 = normale). */
 export const lightLevel = (k: number) => Math.max(0, Math.min(LIGHT_LEVELS - 1, Math.round(k * LIGHT_NORMAL)));
 
@@ -273,7 +283,7 @@ export class Paint {
 }
 
 /** Converte un'immagine indicizzata (per colonne) in un canvas RGBA alla luce normale. */
-export function indexedToCanvas(idx: Uint8Array, w: number, h: number): HTMLCanvasElement {
+export function indexedToCanvas(idx: Uint8Array | Uint32Array, w: number, h: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d')!;
@@ -283,7 +293,8 @@ export function indexedToCanvas(idx: Uint8Array, w: number, h: number): HTMLCanv
   for (let x = 0; x < w; x++) {
     for (let y = 0; y < h; y++) {
       const v = idx[x * h + y];
-      if (v) buf[y * w + x] = COLORMAP[base + v];
+      // gli sprite a colori pieni (Uint32, ABGR) si copiano così come sono
+      if (v) buf[y * w + x] = idx instanceof Uint32Array ? v : COLORMAP[base + v];
     }
   }
   ctx.putImageData(img, 0, 0);
