@@ -5,11 +5,28 @@ import { Music } from './music.ts';
 export type SfxName =
   | 'knife' | 'pistol' | 'smg' | 'chaingun' | 'enemyShot' | 'bite' | 'alert' | 'pain' | 'die'
   | 'pick' | 'weapon' | 'door' | 'secret' | 'hurt' | 'exit' | 'empty' | 'hit'
-  | 'flagTake' | 'flagLost' | 'flagReturn' | 'boom' | 'throw' | 'step';
+  | 'flagTake' | 'flagLost' | 'flagReturn' | 'boom' | 'throw' | 'step'
+  | 'pistolFar' | 'smgFar' | 'chaingunFar' | 'enemyRifle' | 'enemySmg' | 'enemyRevolver';
+
+/**
+ * Spari registrati dal vero (The Free Firearm Sound Library, CC0), tagliati da
+ * tools/cut-gunshot.py: un colpo con la sua coda naturale. Se non si caricano,
+ * resta il suono sintetizzato.
+ */
+const SAMPLES: Partial<Record<SfxName, string>> = {
+  pistol: 'pistol', smg: 'smg', chaingun: 'chaingun',
+  pistolFar: 'pistol-far', smgFar: 'smg-far', chaingunFar: 'chaingun-far',
+  enemyRifle: 'enemy-rifle', enemySmg: 'enemy-smg', enemyRevolver: 'enemy-revolver',
+};
+/** suono sintetizzato di ripiego per i nomi che non hanno una sintesi propria */
+const FALLBACK: Partial<Record<SfxName, SfxName>> = {
+  pistolFar: 'pistol', smgFar: 'smg', chaingunFar: 'chaingun', enemyRifle: 'enemyShot', enemySmg: 'enemyShot', enemyRevolver: 'enemyShot',
+};
 
 /** Quanto riverbero riceve ciascun suono (0 = nessuno). */
 const WET: Partial<Record<SfxName, number>> = {
-  knife: 0.15, pistol: 0.45, smg: 0.35, chaingun: 0.3, enemyShot: 0.45, bite: 0.2, alert: 0.3, pain: 0.25, die: 0.35,
+  knife: 0.15, pistol: 0.45, smg: 0.35, chaingun: 0.3, enemyShot: 0.45,
+  pistolFar: 0.25, smgFar: 0.2, chaingunFar: 0.2, enemyRifle: 0.25, enemySmg: 0.2, enemyRevolver: 0.25, bite: 0.2, alert: 0.3, pain: 0.25, die: 0.35,
   door: 0.4, secret: 0.5, boom: 0.7, throw: 0.2, step: 0.08, exit: 0.25,
 };
 
@@ -23,6 +40,7 @@ export class Sfx {
   private fx: GainNode | null = null;
   fxVolume = 0.75;
   private wet = 0;
+  private samples = new Map<SfxName, AudioBuffer>();
   /** musica procedurale, sullo stesso AudioContext */
   readonly music = new Music();
   volume = 0.6;
@@ -61,6 +79,34 @@ export class Sfx {
     this.send = ctx.createGain();
     this.send.connect(conv).connect(ret).connect(this.fx);
     this.music.attach(ctx, this.master, this.noiseBuf);
+    void this.loadSamples();
+  }
+
+  private async loadSamples(): Promise<void> {
+    const ctx = this.ctx!;
+    await Promise.all(Object.entries(SAMPLES).map(async ([name, file]) => {
+      try {
+        const res = await fetch(`audio/weapons/${file}.wav`);
+        if (!res.ok) return;
+        this.samples.set(name as SfxName, await ctx.decodeAudioData(await res.arrayBuffer()));
+      } catch { /* resta il suono sintetizzato */ }
+    }));
+  }
+
+  /** Quanti campioni registrati sono pronti (per la modalità di debug). */
+  get samplesLoaded(): number { return this.samples.size; }
+
+  /** Suona un campione con un leggero cambio di intonazione, così le raffiche non sono meccaniche. */
+  private sample(buf: AudioBuffer, vol: number): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const g = ctx.createGain();
+    g.gain.value = vol;
+    src.connect(g);
+    this.route(g);
+    src.start();
   }
 
   /** Livello RMS dell'uscita (0..1), per la modalità di debug. */
@@ -136,6 +182,10 @@ export class Sfx {
     if (!this.ctx || vol < 0.03) return;
     const t = this.ctx.currentTime + 0.005;
     this.wet = WET[name] ?? 0;
+    const smp = this.samples.get(name);
+    if (smp) { this.sample(smp, vol); return; }
+    const fb = FALLBACK[name];
+    if (fb) { this.play(fb, vol); return; }
     switch (name) {
       case 'step': this.noise(t, 0.07, 'lowpass', 380 + Math.random() * 160, 0.22 * vol, 1.2, 160); break;
       case 'knife': this.noise(t, 0.12, 'highpass', 2500, 0.25 * vol, 1, 6000); break;

@@ -330,8 +330,10 @@ function onEvent(ev: NetEvent, now: number): void {
       if (volAt(ev.x, ev.y) > 0.15) combatAt = now;
       if (ev.id === myId) return;
       let name: SfxName;
-      if (ev.w >= ENEMY_WEAPON_BASE) name = ENEMY_KINDS[ev.w - ENEMY_WEAPON_BASE] === 'hound' ? 'bite' : 'enemyShot';
-      else name = (['knife', 'pistol', 'smg', 'chaingun'] as const)[ev.w] ?? 'pistol';
+      if (ev.w >= ENEMY_WEAPON_BASE) {
+        const kind = ENEMY_KINDS[ev.w - ENEMY_WEAPON_BASE];
+        name = kind === 'hound' ? 'bite' : kind === 'trooper' ? 'enemySmg' : kind === 'officer' ? 'enemyRevolver' : 'enemyRifle';
+      } else name = (['knife', 'pistolFar', 'smgFar', 'chaingunFar'] as const)[ev.w] ?? 'pistolFar';
       sfx.play(name, volAt(ev.x, ev.y));
       break;
     }
@@ -566,7 +568,8 @@ if (new URLSearchParams(location.search).has('debug')) {
       level: () => level,
       event: (ev: NetEvent) => onEvent(ev, performance.now()),
       /** stato e livello dell'uscita audio */
-      audio: () => ({ state: sfx.state, level: sfx.level(), music: sfx.music.on }),
+      audio: () => ({ state: sfx.state, level: sfx.level(), music: sfx.music.on, samples: sfx.samplesLoaded }),
+      sfx: (n: SfxName) => sfx.play(n),
       /** sposta solo la telecamera (null per tornare al giocatore) */
       peek: (c: { x: number; y: number; a: number } | null) => { camOverride = c; },
     },

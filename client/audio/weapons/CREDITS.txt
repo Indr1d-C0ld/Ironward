@@ -1,0 +1,11 @@
+Spari registrati dal vero, da "The Free Firearm Sound Library" (Prepared SFX Library),
+licenza CC0 (pubblico dominio): https://opengameart.org/content/the-free-firearm-sound-library
+Registrazioni di Ben Jaszczak, Brian Nelson, Kevin Heras e Matthew Nanney.
+
+Tagliati e normalizzati con tools/cut-gunshot.py (un colpo con la sua coda, mono 32 kHz):
+  pistol / pistol-far         Colt 1911 .45 (A_42P, A_34P)
+  smg / smg-far               Carl Gustav M45 9 mm (G_31P, G_20P)
+  chaingun / chaingun-far     AK-47 7.62x39 (C_28P, C_31P)
+  enemy-rifle                 Mosin-Nagant 7.62x54 (M_26P)
+  enemy-smg                   PPSh 7.62x25, breve raffica (P_16P)
+  enemy-revolver              Smith & Wesson 642 .38 Special (V_22P)

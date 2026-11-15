@@ -53,7 +53,7 @@ livelli sono **generati dal codice**. Nessun asset di altri giochi.
 | **Progressione** | Account, EXP, 50 livelli, colori e copricapi sbloccabili, bonus in cooperativa |
 | **Social** | Clan con sigla e codice d'invito, sfide tra clan, classifiche settimanali e di sempre |
 | **Grafica** | Sprite e pareti PixelLab, luce a 32 scalini, figure a 8 viste |
-| **Audio** | Musica chiptune composta dal seed di ogni livello, effetti sintetizzati con riverbero |
+| **Audio** | Spari registrati dal vero (CC0), musica chiptune composta dal seed di ogni livello, riverbero |
 | **Tecnica** | TypeScript su Node 26 (senza compilazione lato server), Canvas 2D, WebSocket, SQLite |
 | **Gestione** | Pannello di amministrazione: espulsioni, sospensioni, correzioni, registro |
 
@@ -271,7 +271,7 @@ Stile VGA/SVGA anni '90.
 
 ## Audio
 
-Tutto il suono è generato in tempo reale con WebAudio, senza file audio.
+Musica ed effetti sono generati in tempo reale con WebAudio; gli spari sono registrazioni vere.
 
 - **Musica procedurale**: ogni livello compone il proprio brano chiptune dal seed della mappa
   (tonalità, giro di accordi, basso, melodia con variazioni, arpeggio e batteria su 8 battute in
@@ -279,9 +279,15 @@ Tutto il suono è generato in tempo reale con WebAudio, senza file audio.
   il Bunker, minore armonico lento per l'Archivio, dorico sintetico per il Laboratorio. Durante gli
   scontri (spari vicini, allarmi, ferite) batteria, arpeggio e melodia si fanno più presenti, poi
   in qualche secondo la musica torna calma. Il tasto **N** la spegne o la riaccende.
-- **Effetti**: spari con schiocco, corpo e coda, esplosioni, porte, passi, nemici, raccolte e
-  segnali delle squadre, tutti sintetizzati. Spari, porte ed esplosioni passano anche da un
-  **riverbero** generato al volo, che dà il suono dei corridoi di pietra.
+- **Spari registrati dal vero**: pistola, mitraglietta e mitragliatrice del giocatore, le stesse
+  armi sentite da lontano per gli altri giocatori, il fucile delle sentinelle, la raffica degli
+  assaltatori e il revolver del Comandante sono registrazioni reali (Colt 1911, Carl Gustav M45,
+  AK-47, Mosin-Nagant, PPSh, S&W 642) dalla *Free Firearm Sound Library*, in **CC0**. Ogni colpo è
+  tagliato con la sua coda naturale (`tools/cut-gunshot.py`) e suonato con una leggera variazione
+  d'intonazione, così le raffiche non sono meccaniche. Crediti in `client/audio/weapons/CREDITS.txt`.
+- **Altri effetti** sintetizzati: coltello, esplosioni, porte, passi, nemici, raccolte e segnali
+  delle squadre. Spari, porte ed esplosioni passano anche da un **riverbero** generato al volo, che
+  dà il suono dei corridoi di pietra.
 
 ## Mappe procedurali
 
@@ -441,6 +447,7 @@ Ironward è software libero: puoi ridistribuirlo e modificarlo secondo i termini
 o (a tua scelta) qualsiasi versione successiva. È distribuito nella speranza che sia utile, ma
 **senza alcuna garanzia**; vedi il file [LICENSE](LICENSE) per i dettagli.
 
-La licenza copre tutto il repository: codice, grafica e suoni. Gli sprite sono stati generati con
-PixelLab dall'autore del progetto. Le meccaniche sono ispirate ai classici del genere, senza
+La licenza copre il codice, la grafica e i suoni sintetizzati. Gli sprite sono stati generati con
+PixelLab dall'autore del progetto. Gli spari registrati vengono dalla *Free Firearm Sound Library*
+(CC0, pubblico dominio), di Ben Jaszczak, Brian Nelson, Kevin Heras e Matthew Nanney. Le meccaniche sono ispirate ai classici del genere, senza
 riutilizzarne contenuti.
