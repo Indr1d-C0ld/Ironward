@@ -1,0 +1,24 @@
+{
+  "name": "ironward",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "FPS raycasting multiplayer nel browser in stile VGA, con mappe procedurali",
+  "scripts": {
+    "build": "esbuild client=client/main.ts gallery=client/gallery.ts admin=client/admin.ts --bundle --format=esm --target=es2022 --sourcemap --outdir=client/dist",
+    "start": "node server/main.ts",
+    "dev": "npm run build && npm start",
+    "check": "tsc --noEmit",
+    "test": "node tools/test-mapgen.ts && node tools/test-db.ts && node tools/test-room.ts && node tools/test-bots.ts",
+    "screenshots": "node tools/screenshots.ts"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

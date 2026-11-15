@@ -1,0 +1,28 @@
+# Servizio systemd per il server di gioco.
+# Installazione (adatta User e WorkingDirectory):
+#   sudo cp deploy/ironward.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ironward
+[Unit]
+Description=Ironward game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ironward
+WorkingDirectory=/opt/ironward
+Environment=PORT=8080
+Environment=HOST=127.0.0.1
+Environment=TRUST_PROXY=1
+Environment=DB_PATH=/opt/ironward/data/ironward.db
+ExecStart=/usr/bin/node server/main.ts
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/ironward/data
+
+[Install]
+WantedBy=multi-user.target

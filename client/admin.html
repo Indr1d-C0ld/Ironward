@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Ironward · Amministrazione</title>
+<style>
+  :root { --bg: #0d0f12; --panel: #171a1f; --line: #2b3038; --text: #e8e2d0; --muted: #9a9688; --accent: #e0a830; --bad: #ff7a6a; --good: #7fd17f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px "Courier New", monospace; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 4px; color: var(--accent); }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  a { color: var(--accent); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 14px; font: inherit; letter-spacing: 1px; cursor: pointer; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  input, select { padding: 8px 10px; background: #0f1114; color: var(--text); border: 1px solid var(--line); font: inherit; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button.act { padding: 5px 9px; margin: 2px; background: #2b3038; color: var(--text); border: 0; font: inherit; font-size: 12px; cursor: pointer; }
+  button.act:hover { filter: brightness(1.25); }
+  button.act.danger { background: #5a2a24; }
+  button.act.main { background: var(--accent); color: #1a1206; font-weight: bold; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .bar input[type=text] { flex: 1; min-width: 180px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; min-width: 120px; }
+  .stat b { display: block; font-size: 22px; color: var(--accent); }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .room { background: var(--panel); border: 1px solid var(--line); padding: 12px; margin-bottom: 12px; }
+  .room h3 { margin: 0 0 6px; font-size: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: normal; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .muted { color: var(--muted); }
+  .bad { color: var(--bad); }
+  .good { color: var(--good); }
+  .msg { min-height: 20px; margin: 0 0 10px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>IRONWARD · AMMINISTRAZIONE</h1>
+  <div><span id="who" class="muted"></span> · <a href="/">torna al gioco</a></div>
+</header>
+<main>
+  <p id="msg" class="msg" role="status"></p>
+  <div id="denied" hidden>
+    <p>Questa pagina è riservata agli amministratori. Accedi dal <a href="/">menu del gioco</a> con un account amministratore, poi torna qui.</p>
+  </div>
+  <div id="app" hidden>
+    <nav class="tabs">
+      <button type="button" data-tab="server" class="on">Server</button>
+      <button type="button" data-tab="users">Giocatori</button>
+      <button type="button" data-tab="clans">Clan</button>
+      <button type="button" data-tab="log">Registro</button>
+    </nav>
+    <section id="tab-server">
+      <div class="stats" id="counts"></div>
+      <form class="bar" id="bcForm">
+        <input type="text" id="bcText" maxlength="120" placeholder="Messaggio a tutti i giocatori" autocomplete="off">
+        <select id="bcRoom"><option value="">tutte le stanze</option></select>
+        <button type="submit" class="act main">Invia</button>
+      </form>
+      <div id="rooms"></div>
+    </section>
+    <section id="tab-users" hidden>
+      <div class="bar"><input type="text" id="userQ" placeholder="Cerca per nome (vuoto = tutti)" autocomplete="off"></div>
+      <div class="wrap"><table id="users"></table></div>
+    </section>
+    <section id="tab-clans" hidden>
+      <div class="bar"><input type="text" id="clanQ" placeholder="Cerca per sigla o nome" autocomplete="off"></div>
+      <div class="wrap"><table id="clans"></table></div>
+    </section>
+    <section id="tab-log" hidden>
+      <div class="wrap"><table id="log"></table></div>
+    </section>
+  </div>
+</main>
+<script type="module" src="dist/admin.js"></script>
+</body>
+</html>

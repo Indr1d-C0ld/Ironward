@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galleria sprite</title>
+<style>
+  body { margin: 0; padding: 16px; background: #15171b; color: #ddd; font: 12px "Courier New", monospace; }
+  h2 { margin: 18px 0 8px; color: #e0a830; }
+  section { display: flex; flex-wrap: wrap; gap: 8px; }
+  figure { margin: 0; }
+  canvas { image-rendering: pixelated; display: block; }
+  figcaption { margin-top: 2px; }
+</style>
+</head>
+<body>
+<h2>Palette</h2><section id="palette"></section>
+<h2>Texture</h2><section id="textures"></section>
+<h2>Sprite</h2><section id="sprites"></section>
+<h2>Armi</h2><section id="weapons"></section>
+<script type="module" src="dist/gallery.js"></script>
+</body>
+</html>
