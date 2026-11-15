@@ -170,28 +170,66 @@ function dropSpecks(img: RGBAImage): RGBAImage {
     sizes.push(n);
   }
   const big = Math.max(0, ...sizes);
+  // pezzi grigi o bianchi staccati dalla figura (schegge, fumo, segni delle animazioni)
+  const grey = new Array(sizes.length).fill(0);
+  for (let i = 0; i < w * h; i++) {
+    if (label[i] < 0) continue;
+    const o = i * 4;
+    if (Math.max(px[o], px[o + 1], px[o + 2]) - Math.min(px[o], px[o + 1], px[o + 2]) < 32) grey[label[i]]++;
+  }
   const out = new Uint8Array(px);
-  for (let i = 0; i < w * h; i++) if (label[i] >= 0 && sizes[label[i]] < big * 0.04) out[i * 4 + 3] = 0;
+  for (let i = 0; i < w * h; i++) {
+    const l = label[i];
+    if (l < 0 || sizes[l] === big) continue;
+    if (sizes[l] < big * 0.04 || (sizes[l] < big * 0.3 && grey[l] > sizes[l] * 0.6)) out[i * 4 + 3] = 0;
+  }
   return { w, h, px: out };
 }
 
-/** Toglie a strati i pixel grigio chiaro sul bordo della sagoma (alone di alcune animazioni). */
-function stripHalo(img: RGBAImage, passes = 4): RGBAImage {
+/** Colori (a 5 bit per canale) presenti nelle pose ferme di un personaggio. */
+function paletteOf(imgs: RGBAImage[]): Set<number> {
+  const set = new Set<number>();
+  for (const img of imgs) for (let i = 0; i < img.w * img.h; i++) {
+    const o = i * 4;
+    if (img.px[o + 3] >= 128) set.add(((img.px[o] >> 3) << 10) | ((img.px[o + 1] >> 3) << 5) | (img.px[o + 2] >> 3));
+  }
+  return set;
+}
+
+/**
+ * Toglie l'alone delle animazioni: pixel grigio chiaro (o bianchi, se `white`) collegati al
+ * bordo della sagoma attraverso altri pixel simili, con un colore che nelle pose ferme del
+ * personaggio non compare mai. Le parti grigie vere (armi argentate) restano perché il loro
+ * colore è anche nelle pose ferme; le vampe restano perché non sono grigie.
+ */
+function stripHalo(img: RGBAImage, pal: Set<number>, white: boolean): RGBAImage {
   const { w, h } = img;
   const px = new Uint8Array(img.px);
-  const opaque = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && px[(y * w + x) * 4 + 3] >= 128;
-  for (let p = 0; p < passes; p++) {
-    const kill: number[] = [];
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const o = (y * w + x) * 4;
-      if (px[o + 3] < 128) continue;
-      const r = px[o], g = px[o + 1], b = px[o + 2];
-      const grey = Math.max(r, g, b) - Math.min(r, g, b) < 28 && Math.min(r, g, b) > 120;
-      if (grey && (!opaque(x - 1, y) || !opaque(x + 1, y) || !opaque(x, y - 1) || !opaque(x, y + 1))) kill.push(o);
-    }
-    if (!kill.length) break;
-    for (const o of kill) px[o + 3] = 0;
+  const isHalo = (i: number) => {
+    const o = i * 4;
+    if (px[o + 3] < 128) return false;
+    const r = px[o], g = px[o + 1], b = px[o + 2];
+    if (Math.max(r, g, b) - Math.min(r, g, b) >= 34 || Math.min(r, g, b) <= 90) return false;
+    if (!white && Math.max(r, g, b) > 232) return false;
+    return !pal.has(((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+  };
+  const transparent = (x: number, y: number) => x < 0 || y < 0 || x >= w || y >= h || px[(y * w + x) * 4 + 3] < 128;
+  const seen = new Uint8Array(w * h);
+  const stack: number[] = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (isHalo(i) && (transparent(x - 1, y) || transparent(x + 1, y) || transparent(x, y - 1) || transparent(x, y + 1))) { seen[i] = 1; stack.push(i); }
   }
+  while (stack.length) {
+    const i = stack.pop()!, x = i % w, y = (i / w) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const X = x + dx, Y = y + dy;
+      if (X < 0 || Y < 0 || X >= w || Y >= h) continue;
+      const j = Y * w + X;
+      if (!seen[j] && isHalo(j)) { seen[j] = 1; stack.push(j); }
+    }
+  }
+  for (let i = 0; i < w * h; i++) if (seen[i]) px[i * 4 + 3] = 0;
   return { w, h, px };
 }
 
@@ -202,6 +240,7 @@ for (const c of CHARS) {
   if (!existsSync(join(SRC, 'characters', c.dir))) { missing.push(`${c.key} (intero personaggio)`); continue; }
   const state = stateDir(c.dir);
   const rot = (dir: string) => readPng(join(state, 'rotations', `${dir}.png`));
+  const pal = paletteOf(DIRS.map(rot));
   // piedi della figura di fronte: la stessa quota per tutte le pose
   const south = rot('south');
   const foot = bbox(south)!.y1;
@@ -220,9 +259,13 @@ for (const c of CHARS) {
           : fr === 'pain' ? painFrame(frames, standB ? standB.y1 - standB.y0 + 1 : 100)
           : shotFrames(frames)[fr];
         const f = frames[idx];
-        // negli spari la vampa può essere staccata dall'arma: lì non si tolgono i frammenti
-        if (f) img = fr === 'aim' || fr === 'fire' ? readPng(f) : dropSpecks(readPng(f));
-        if (img && c.key === 'hound') img = stripHalo(img);
+        // prima l'alone, poi i frammenti; negli spari la vampa può essere staccata dall'arma,
+        // quindi lì i frammenti restano e il bianco non conta come alone
+        const shot = fr === 'aim' || fr === 'fire';
+        if (f) {
+          const clean = stripHalo(readPng(f), pal, !shot);
+          img = shot ? clean : dropSpecks(clean);
+        }
       }
       if (!img) { missing.push(`${c.key}:${pose}:${v}`); continue; }
       // le animazioni hanno una tela più grande ma lo stesso centro della rotazione
@@ -233,7 +276,8 @@ for (const c of CHARS) {
   const df = animFrames(state, c.dead[0], 'south');
   const dead = df[c.dead[1] < 0 ? df.length + c.dead[1] : c.dead[1]];
   if (dead) {
-    const img = fit(readPng(dead), CELL - 2, CELL - 2);
+    // a terra il bordo chiaro va tolto anche se quel colore c'è nelle pose ferme
+    const img = fit(dropSpecks(stripHalo(readPng(dead), new Set(), true)), CELL - 2, CELL - 2);
     const b = bbox(img)!;
     cells.push({ key: `${c.key}:dead`, img: place(img, Math.round(CELL / 2 - (b.x0 + b.x1) / 2), CELL - 1 - b.y1) });
   } else missing.push(`${c.key}:dead`);

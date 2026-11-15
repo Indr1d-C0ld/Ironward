@@ -27,6 +27,7 @@ livelli sono **generati dal codice**. Nessun asset di altri giochi.
 - [Immagini](#immagini)
 - [Avvio rapido](#avvio-rapido)
 - [Comandi](#comandi)
+- [Opzioni](#opzioni)
 - [Modalità di gioco](#modalità-di-gioco)
 - [Armi e nemici](#armi-e-nemici)
 - [Account, EXP e sblocchi](#account-exp-e-sblocchi)
@@ -84,18 +85,34 @@ nella stessa stanza gioca con te; il link `?room=nome&mode=ctf` porta direttamen
 
 ## Comandi
 
+Comandi predefiniti; **tutti si possono cambiare** in *Opzioni → Comandi* (due tasti per azione,
+anche pulsanti del mouse e rotella).
+
 | Tasto | Azione |
 |---|---|
-| WASD / frecce | movimento (← → ruotano) |
-| mouse, click / Ctrl | mira e fuoco |
-| E / spazio | apri porte, pareti segrete, interruttore d'uscita |
-| 1–4, rotella | coltello, pistola, mitraglietta, mitragliatrice |
-| G | lancia una granata |
-| N | musica sì/no (la scelta viene ricordata) |
+| WASD / ↑↓ | movimento; ← → ruotano |
+| mouse, clic sinistro / Ctrl sx | mira e fuoco |
+| E / Spazio | apri porte, pareti segrete, interruttore d'uscita |
+| 1–4, rotella, X / Z | coltello, pistola, mitraglietta, mitragliatrice |
+| G / clic destro | lancia una granata |
+| N | musica sì/no |
 | Tab | classifica della partita |
 | M | minimappa |
 | T / Invio | chat |
-| Esc, poi Q | torna al menu |
+| Esc | pausa: riprendi, opzioni, esci al menu |
+
+## Opzioni
+
+Si aprono dal menu iniziale e, in partita, dal menu di pausa (Esc). Ogni modifica si applica
+subito e resta salvata nel browser.
+
+| Scheda | Cosa si regola |
+|---|---|
+| **Controlli** | sensibilità del mouse (predefinita la metà di quella originale), mouse invertito, velocità di rotazione con i tasti |
+| **Comandi** | due tasti per ciascuna delle 19 azioni, mouse e rotella compresi; un tasto già usato viene tolto all'altra azione; ripristino dei predefiniti |
+| **Video** | risoluzione interna (da 200 righe, molto VGA, a 480, nitida), campo visivo 60–120°, oscillazione dell'arma, lampi di danno e raccolta, contatore FPS |
+| **Interfaccia** | dimensione dell'HUD, opacità della barra, mirino (croce, punto, cerchio, nessuno) con colore e dimensione, dimensione della minimappa, EXP guadagnata a schermo |
+| **Audio** | volume generale, effetti e musica separati, musica sì/no |
 
 ## Modalità di gioco
 

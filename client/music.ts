@@ -128,6 +128,11 @@ export class Music {
 
   get on(): boolean { return this.enabled; }
 
+  setVolume(v: number): void {
+    this.volume = v;
+    if (this.out && this.ctx) this.out.gain.setTargetAtTime(this.enabled ? v : 0, this.ctx.currentTime, 0.1);
+  }
+
   setEnabled(on: boolean): void {
     this.enabled = on;
     if (this.out && this.ctx) this.out.gain.setTargetAtTime(on ? this.volume : 0, this.ctx.currentTime, 0.2);

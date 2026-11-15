@@ -1,5 +1,6 @@
 // HUD disegnato a risoluzione piena sopra la vista 3D.
 
+import { settings } from './settings.ts';
 import { MODE_NAMES, PLAYER_COLORS, TEAMS, WEAPONS, isTeamMode, type GameMode } from '../shared/defs.ts';
 import { TEX_EXIT, THEMES, type Level } from '../shared/level.ts';
 import type { NetMe, NetPlayer } from '../shared/protocol.ts';
@@ -28,6 +29,8 @@ export interface HudState {
   registered: boolean;
   xpPopups: { text: string; t: number }[];
   levelBanner: { lvl: number; unlocks: string[]; t: number } | null;
+  /** fotogrammi al secondo da mostrare, negativo per nasconderli */
+  fps: number;
   teamScore: number[];
   timeLeft: number;
   flags: { state: number; x: number; y: number; carrier: number }[];
@@ -39,7 +42,7 @@ const teamRgb = (t: number) => PLAYER_COLORS[TEAMS[t].color].rgb;
 const rgb = (c: readonly number[], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
 export function drawHud(ctx: CanvasRenderingContext2D, W: number, H: number, s: HudState): void {
-  const u = Math.max(1, Math.min(W / 640, H / 400));
+  const u = Math.max(0.6, Math.min(W / 640, H / 400)) * settings.hudScale;
   ctx.save();
   ctx.textBaseline = 'middle';
   const font = (px: number, bold = true) => { ctx.font = `${bold ? 'bold ' : ''}${Math.round(px * u)}px "Courier New", monospace`; };
@@ -48,16 +51,28 @@ export function drawHud(ctx: CanvasRenderingContext2D, W: number, H: number, s: 
   if (s.hurt > 0) { ctx.fillStyle = `rgba(200,20,10,${Math.min(0.55, s.hurt * 0.5)})`; ctx.fillRect(0, 0, W, H); }
   if (s.pickup > 0) { ctx.fillStyle = `rgba(255,220,120,${s.pickup * 0.25})`; ctx.fillRect(0, 0, W, H); }
 
-  // mirino e hit marker
+  // mirino (stile, colore e dimensione dalle opzioni) e hit marker
   const cx = W / 2, cy = H / 2;
-  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-  ctx.lineWidth = Math.max(1, u);
+  const cs = settings.crosshairSize;
+  ctx.strokeStyle = settings.crosshairColor;
+  ctx.fillStyle = settings.crosshairColor;
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = Math.max(1, u * Math.min(1.5, cs));
   ctx.beginPath();
-  ctx.moveTo(cx - 7 * u, cy); ctx.lineTo(cx - 3 * u, cy);
-  ctx.moveTo(cx + 3 * u, cy); ctx.lineTo(cx + 7 * u, cy);
-  ctx.moveTo(cx, cy - 7 * u); ctx.lineTo(cx, cy - 3 * u);
-  ctx.moveTo(cx, cy + 3 * u); ctx.lineTo(cx, cy + 7 * u);
-  ctx.stroke();
+  if (settings.crosshair === 'cross') {
+    ctx.moveTo(cx - 7 * u * cs, cy); ctx.lineTo(cx - 3 * u * cs, cy);
+    ctx.moveTo(cx + 3 * u * cs, cy); ctx.lineTo(cx + 7 * u * cs, cy);
+    ctx.moveTo(cx, cy - 7 * u * cs); ctx.lineTo(cx, cy - 3 * u * cs);
+    ctx.moveTo(cx, cy + 3 * u * cs); ctx.lineTo(cx, cy + 7 * u * cs);
+    ctx.stroke();
+  } else if (settings.crosshair === 'circle') {
+    ctx.arc(cx, cy, 6 * u * cs, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (settings.crosshair === 'dot') {
+    ctx.arc(cx, cy, 1.6 * u * cs, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
   const hm = 1 - (s.now - s.hitMarker) / 250;
   if (hm > 0) {
     ctx.strokeStyle = `rgba(255,80,60,${hm})`;
@@ -70,7 +85,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, W: number, H: number, s: 
   // barra inferiore
   const barH = 44 * u;
   const y = H - barH;
-  ctx.fillStyle = 'rgba(14,16,20,0.78)';
+  ctx.fillStyle = `rgba(14,16,20,${settings.hudOpacity})`;
   ctx.fillRect(0, y, W, barH);
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
   ctx.fillRect(0, y, W, Math.max(1, u));
@@ -183,6 +198,12 @@ export function drawHud(ctx: CanvasRenderingContext2D, W: number, H: number, s: 
   }
 
   if (s.showMap) drawMinimap(ctx, W, H, u, s);
+  if (s.fps >= 0) {
+    font(10);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(200,255,200,0.85)';
+    ctx.fillText(`${Math.round(s.fps)} FPS`, W - 8 * u, 40 * u);
+  }
   if (s.showScores) drawScores(ctx, W, H, u, s);
   ctx.restore();
 }
@@ -235,7 +256,7 @@ function drawTeamPanel(ctx: CanvasRenderingContext2D, W: number, u: number, s: H
 
 function drawMinimap(ctx: CanvasRenderingContext2D, _W: number, H: number, u: number, s: HudState): void {
   const lvl = s.level;
-  const cs = Math.max(2, Math.floor(Math.min(H * (isTeamMode(s.mode) ? 0.45 : 0.55), 300 * u) / lvl.h));
+  const cs = Math.max(1, Math.floor((Math.min(H * (isTeamMode(s.mode) ? 0.45 : 0.55), 300 * u) * settings.minimapSize) / lvl.h));
   const ox = 10 * u, oy = (isTeamMode(s.mode) ? 96 : 22) * u;
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(ox - 2, oy - 2, lvl.w * cs + 4, lvl.h * cs + 4);

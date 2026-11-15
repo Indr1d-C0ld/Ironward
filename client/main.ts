@@ -11,6 +11,8 @@ import {
 } from '../shared/protocol.ts';
 import { buildTextures, drawWeapon, enemySpriteKey, playerSpriteKey, setWeaponImages, SpriteBank, viewIndex, type Pose } from './art.ts';
 import { loadAtlas } from './atlas.ts';
+import { bound, onSettings, saveSettings, settings, type Action } from './settings.ts';
+import { closeOptions, openOptions, optionsOpen } from './options.ts';
 import { clearToken, initMenu, type PlayOptions } from './menu.ts';
 import { unlocksAt } from '../shared/progression.ts';
 import { Sfx, type SfxName } from './audio.ts';
@@ -18,9 +20,8 @@ import { drawHud } from './hud.ts';
 import { Renderer, type SpriteInst } from './render.ts';
 
 const INTERP_MS = 110;
+/** rotazione per pixel di mouse a sensibilità 1 */
 const MOUSE_SENS = 0.0026;
-const TURN_SPEED = 2.8;
-const LOW_RES_H = 270;
 
 interface Snap { time: number; players: Map<number, NetPlayer>; enemies: Map<number, NetEnemy>; doors: Float32Array; }
 
@@ -47,7 +48,11 @@ void loadAtlas().then((pixellab) => {
   setTimeout(step, 50);
 });
 const sfx = new Sfx();
-try { if (localStorage.getItem('iw-music') === '0') sfx.music.setEnabled(false); } catch { /* ignora */ }
+function applyAudio(): void {
+  sfx.setVolumes(settings.volume, settings.sfxVolume, settings.musicVolume);
+  sfx.music.setEnabled(settings.music);
+}
+applyAudio();
 
 let renderer: Renderer;
 function resize(): void {
@@ -55,11 +60,18 @@ function resize(): void {
   screen.width = Math.round(window.innerWidth * dpr);
   screen.height = Math.round(window.innerHeight * dpr);
   const aspect = window.innerWidth > 0 && window.innerHeight > 0 ? window.innerWidth / window.innerHeight : 16 / 9;
-  const lowW = Math.max(240, Math.min(720, Math.round(LOW_RES_H * aspect)));
-  const vfov = 52 * Math.PI / 180;
-  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * (lowW / LOW_RES_H)) * 180 / Math.PI;
-  renderer = new Renderer(lowW, LOW_RES_H, Math.min(100, hfov), textures, spriteTex);
+  const rows = settings.resolution;
+  const lowW = Math.max(240, Math.min(1280, Math.round(rows * aspect)));
+  renderer = new Renderer(lowW, rows, settings.fov, textures, spriteTex);
 }
+// risoluzione e campo visivo si applicano subito; il renderer si ricrea solo se cambiano
+let lastVideo = '';
+onSettings(() => {
+  applyAudio();
+  const v = `${settings.resolution}|${settings.fov}`;
+  if (v !== lastVideo) { lastVideo = v; resize(); }
+});
+lastVideo = `${settings.resolution}|${settings.fov}`;
 window.addEventListener('resize', resize);
 resize();
 
@@ -112,39 +124,60 @@ let bobPhase = 0, moving = 0;
 // ------------------------------------------------------------------ input
 
 const keys = new Set<string>();
-let mouseDown = false;
 let showMap = false;
 
 function locked(): boolean { return document.pointerLockElement === screen; }
 
-window.addEventListener('keydown', (e) => {
-  if (document.activeElement === chatInput) return;
-  if (menu.style.display !== 'none') return;
-  sfx.unlock();
-  if (e.code === 'Tab') e.preventDefault();
-  if (e.code === 'KeyT' || e.code === 'Enter') {
-    e.preventDefault();
+/** L'azione è attiva (uno dei suoi due tasti o pulsanti è premuto). */
+function act(a: Action): boolean {
+  const [k0, k1] = settings.keys[a];
+  return (!!k0 && keys.has(k0)) || (!!k1 && keys.has(k1));
+}
+
+/** Azioni "a scatto" (non tenute premute): armi, minimappa, chat, musica. */
+function pressed(code: string, repeat: boolean): boolean {
+  if (bound('chat', code)) {
     chatInput.style.display = 'block';
     chatInput.focus();
     document.exitPointerLock();
     keys.clear();
-    return;
+    return true;
   }
-  if (e.code === 'KeyM' && !e.repeat) showMap = !showMap;
-  if (e.code === 'KeyQ' && !locked()) { location.reload(); return; }
-  if (e.code === 'KeyN') {
-    sfx.music.setEnabled(!sfx.music.on);
-    try { localStorage.setItem('iw-music', sfx.music.on ? '1' : '0'); } catch { /* ignora */ }
-    feed.push({ text: sfx.music.on ? 'Musica attiva (N per spegnerla)' : 'Musica spenta (N per riattivarla)', t: performance.now() });
+  if (repeat) return false;
+  if (bound('map', code)) showMap = !showMap;
+  if (bound('music', code)) {
+    settings.music = !settings.music;
+    saveSettings();
+    feed.push({ text: settings.music ? 'Musica attiva' : 'Musica spenta', t: performance.now() });
   }
-  if (e.code.startsWith('Digit')) {
-    const n = Number(e.code.slice(5)) - 1;
-    if (n >= 0 && n < WEAPONS.length) wantWeapon = n;
+  (['weapon1', 'weapon2', 'weapon3', 'weapon4'] as const).forEach((a, n) => { if (bound(a, code)) wantWeapon = n; });
+  if (bound('nextWeapon', code)) cycleWeapon(1);
+  if (bound('prevWeapon', code)) cycleWeapon(-1);
+  return false;
+}
+
+function cycleWeapon(dir: number): void {
+  let w = wantWeapon >= 0 ? wantWeapon : localWeapon;
+  for (let i = 0; i < WEAPONS.length; i++) {
+    w = (w + dir + WEAPONS.length) % WEAPONS.length;
+    if ((me.wp >> w) & 1) break;
   }
+  wantWeapon = w;
+}
+
+const inGame = () => menu.style.display === 'none';
+
+window.addEventListener('keydown', (e) => {
+  if (document.activeElement === chatInput || optionsOpen()) return;
+  if (!inGame()) return;
+  sfx.unlock();
+  // Tab e gli altri tasti di gioco non devono muovere il focus della pagina
+  if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+  if (pressed(e.code, e.repeat)) { e.preventDefault(); return; }
   keys.add(e.code);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
-window.addEventListener('blur', () => { keys.clear(); mouseDown = false; });
+window.addEventListener('blur', () => keys.clear());
 
 chatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
@@ -165,20 +198,27 @@ chatInput.addEventListener('keydown', (e) => {
 screen.addEventListener('mousedown', (e) => {
   sfx.unlock();
   if (!locked()) { void screen.requestPointerLock(); return; }
-  if (e.button === 0) mouseDown = true;
+  const code = `Mouse${e.button}`;
+  keys.add(code);
+  pressed(code, false);
 });
-window.addEventListener('mouseup', (e) => { if (e.button === 0) mouseDown = false; });
-window.addEventListener('mousemove', (e) => { if (locked()) angle += e.movementX * MOUSE_SENS; });
+window.addEventListener('mouseup', (e) => keys.delete(`Mouse${e.button}`));
+screen.addEventListener('contextmenu', (e) => e.preventDefault());
+window.addEventListener('mousemove', (e) => {
+  if (locked()) angle += e.movementX * MOUSE_SENS * settings.mouseSens * (settings.invertMouse ? -1 : 1);
+});
 window.addEventListener('wheel', (e) => {
-  if (!locked()) return;
-  const dir = e.deltaY > 0 ? 1 : -1;
-  let w = wantWeapon >= 0 ? wantWeapon : localWeapon;
-  for (let i = 0; i < WEAPONS.length; i++) {
-    w = (w + dir + WEAPONS.length) % WEAPONS.length;
-    if ((me.wp >> w) & 1) break;
-  }
-  wantWeapon = w;
+  if (!locked() || optionsOpen()) return;
+  pressed(e.deltaY > 0 ? 'WheelDown' : 'WheelUp', false);
 });
+
+// ------------------------------------------------------------------ menu di pausa
+
+const pauseBox = $('pause');
+$('pResume').addEventListener('click', () => { sfx.unlock(); void screen.requestPointerLock(); });
+$('pOptions').addEventListener('click', () => openOptions());
+$('pQuit').addEventListener('click', () => location.reload());
+document.addEventListener('pointerlockchange', () => { if (locked()) closeOptions(); });
 
 // ------------------------------------------------------------------ rete
 
@@ -352,14 +392,14 @@ function onEvent(ev: NetEvent, now: number): void {
 // ------------------------------------------------------------------ simulazione locale
 
 function inputStep(): void {
-  const k = (c: string) => (keys.has(c) ? 1 : 0);
-  const f = Math.max(k('KeyW'), k('ArrowUp')) - Math.max(k('KeyS'), k('ArrowDown'));
-  const s = k('KeyD') - k('KeyA');
-  angle += (k('ArrowRight') - k('ArrowLeft')) * TURN_SPEED * INPUT_DT;
+  const k = (a: Action) => (act(a) ? 1 : 0);
+  const f = k('forward') - k('back');
+  const s = k('strafeRight') - k('strafeLeft');
+  angle += (k('turnRight') - k('turnLeft')) * (settings.turnSpeed * Math.PI / 180) * INPUT_DT;
   angle = Math.atan2(Math.sin(angle), Math.cos(angle));
-  const fire = mouseDown || keys.has('ControlLeft') || keys.has('ControlRight');
-  const use = keys.has('KeyE') || keys.has('Space');
-  const thr = keys.has('KeyG');
+  const fire = act('fire');
+  const use = act('use');
+  const thr = act('throw');
   const cmd: InputCmd = { q: ++seq, f, s, a: Math.round(angle * 10000) / 10000, b: (fire ? BTN_FIRE : 0) | (use ? BTN_USE : 0) | (thr ? BTN_THROW : 0), w: wantWeapon };
   // compensazione della latenza: il tick del server che si sta guardando (gli altri sono interpolati)
   if (fire && clockOffset !== null) cmd.v = Math.round(((performance.now() - clockOffset - INTERP_MS) / (TICK_DT * 1000)) * 100) / 100;
@@ -423,9 +463,11 @@ function poseFor(state: number, id: number, movingNow: boolean, now: number): Po
 }
 
 let last = performance.now();
+let fps = 60;
 function frame(now: number): void {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - last) / 1000);
+  if (now > last) fps += (1000 / (now - last) - fps) * 0.05;
   last = now;
   if (!level || !ws) return;
 
@@ -496,8 +538,8 @@ function frame(now: number): void {
   flags.forEach((f, t) => { if (f.state !== 1) sprites.push({ x: f.x, y: f.y, key: `flag${t}` }); });
   renderer.render(cam, level, doorOpen, sprites, flash);
   if (alive) {
-    const bobX = Math.sin(bobPhase) * 6 * moving;
-    const bobY = Math.abs(Math.cos(bobPhase)) * 5 * moving + 2;
+    const bobX = Math.sin(bobPhase) * 6 * moving * settings.bob;
+    const bobY = Math.abs(Math.cos(bobPhase)) * 5 * moving * settings.bob + 2;
     drawWeapon(renderer.ctx, localWeapon, fireAnim > 0, renderer.W, renderer.H, bobX, bobY);
   }
 
@@ -505,17 +547,12 @@ function frame(now: number): void {
   sctx.drawImage(renderer.canvas, 0, 0, screen.width, screen.height);
   drawHud(sctx, screen.width, screen.height, {
     me: { ...me, w: localWeapon, am: localAmmo }, alive, myId, mode, room: roomName, levelNum, level, doorOpen, players,
-    feed, hurt, pickup: pickupFlash, hitMarker, showScores: keys.has('Tab'), showMap, cam, others, enemiesLeft, now,
-    registered, xpPopups, levelBanner, teamScore, timeLeft, flags, myTeam,
+    feed, hurt: hurt * settings.flashes, pickup: pickupFlash * settings.flashes, hitMarker, showScores: act('scores'), showMap, cam, others, enemiesLeft, now,
+    registered, xpPopups: settings.showXp ? xpPopups : [], levelBanner, teamScore, timeLeft, flags, myTeam,
+    fps: settings.showFps ? fps : -1,
   });
-  if (!locked() && chatInput.style.display !== 'block') {
-    sctx.fillStyle = 'rgba(0,0,0,0.5)';
-    sctx.fillRect(0, screen.height / 2 - 30, screen.width, 60);
-    sctx.fillStyle = '#fff';
-    sctx.textAlign = 'center';
-    sctx.font = `bold ${Math.round(screen.height / 30)}px "Courier New", monospace`;
-    sctx.fillText('Clicca per giocare', screen.width / 2, screen.height / 2 + 6);
-  }
+  // menu di pausa quando il puntatore è libero (Esc), tranne durante la chat
+  pauseBox.hidden = locked() || chatInput.style.display === 'block' || optionsOpen();
 }
 requestAnimationFrame(frame);
 

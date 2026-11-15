@@ -19,6 +19,9 @@ export class Sfx {
   private noiseBuf: AudioBuffer | null = null;
   private send: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
+  /** bus degli effetti (volume separato dalla musica) */
+  private fx: GainNode | null = null;
+  fxVolume = 0.75;
   private wet = 0;
   /** musica procedurale, sullo stesso AudioContext */
   readonly music = new Music();
@@ -32,6 +35,9 @@ export class Sfx {
     this.master = ctx.createGain();
     this.master.gain.value = this.volume;
     this.master.connect(ctx.destination);
+    this.fx = ctx.createGain();
+    this.fx.gain.value = this.fxVolume;
+    this.fx.connect(this.master);
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.master.connect(this.analyser);
@@ -53,7 +59,7 @@ export class Sfx {
     const ret = ctx.createGain();
     ret.gain.value = 0.55;
     this.send = ctx.createGain();
-    this.send.connect(conv).connect(ret).connect(this.master);
+    this.send.connect(conv).connect(ret).connect(this.fx);
     this.music.attach(ctx, this.master, this.noiseBuf);
   }
 
@@ -67,11 +73,20 @@ export class Sfx {
     return Math.sqrt(sum / buf.length);
   }
 
+  /** Volumi: generale, effetti, musica (0..1). */
+  setVolumes(master: number, fx: number, music: number): void {
+    this.volume = master; this.fxVolume = fx;
+    this.music.setVolume(music);
+    if (!this.ctx) return;
+    this.master!.gain.setTargetAtTime(master, this.ctx.currentTime, 0.05);
+    this.fx!.gain.setTargetAtTime(fx, this.ctx.currentTime, 0.05);
+  }
+
   get state(): string { return this.ctx?.state ?? 'nessun contesto'; }
 
   /** Collega un suono all'uscita diretta e, in proporzione, al riverbero. */
   private route(node: AudioNode): void {
-    node.connect(this.master!);
+    node.connect(this.fx!);
     if (this.wet > 0 && this.send) {
       const g = this.ctx!.createGain();
       g.gain.value = this.wet;

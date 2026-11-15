@@ -2,6 +2,7 @@
 // statistiche personali e classifiche.
 
 import { GAME_MODES, MODE_NAMES, PLAYER_COLORS, parseMode, type GameMode } from '../shared/defs.ts';
+import { openOptions } from './options.ts';
 import {
   CLAN_FOUND_LEVEL, CLAN_MAX_MEMBERS, COLOR_LEVELS, HATS, MAX_LEVEL, PERKS, colorUnlocked, hatUnlocked, unlocksAt, xpForLevel, type Profile,
 } from '../shared/progression.ts';
@@ -427,6 +428,8 @@ export function initMenu(onPlay: (o: PlayOptions) => void): void {
     period.addEventListener('change', load);
     void load();
   });
+
+  $('openOptions').addEventListener('click', () => openOptions());
 
   // --- stanza e avvio
   const params = new URLSearchParams(location.search);
